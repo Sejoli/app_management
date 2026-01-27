@@ -1,0 +1,5 @@
+ALTER TABLE public.company ADD COLUMN IF NOT EXISTS email TEXT;
+ALTER TABLE public.company ADD COLUMN IF NOT EXISTS instagram TEXT;
+ALTER TABLE public.company ADD COLUMN IF NOT EXISTS facebook TEXT;
+ALTER TABLE public.company ADD COLUMN IF NOT EXISTS linkedin TEXT;
+ALTER TABLE public.company ADD COLUMN IF NOT EXISTS youtube TEXT;

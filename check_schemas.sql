@@ -1,0 +1,1 @@
+SELECT table_name, column_name, data_type FROM information_schema.columns WHERE table_name IN ('invoices', 'po_ins', 'quotations', 'balances', 'internal_letters', 'purchase_orders') ORDER BY table_name, ordinal_position;

@@ -1,0 +1,4 @@
+
+ALTER TABLE purchase_orders 
+ADD COLUMN IF NOT EXISTS discount numeric DEFAULT 0,
+ADD COLUMN IF NOT EXISTS ppn numeric DEFAULT 11;

@@ -1,0 +1,2 @@
+ALTER TABLE public.quotations
+ADD COLUMN IF NOT EXISTS last_follow_up_at TIMESTAMP WITH TIME ZONE;
