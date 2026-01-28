@@ -1,0 +1,3 @@
+- [ ] Create `src/pages/ManualBook.tsx`
+- [ ] Update `src/App.tsx` (Add Route)
+- [ ] Update `src/components/AppSidebar.tsx` (Add Menu Item)

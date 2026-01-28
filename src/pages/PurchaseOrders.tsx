@@ -246,14 +246,22 @@ id,
                 // We need a PIC. We can pick the first one for the vendor, or we have to ask user?
                 // Prompt: "vendornya jangan dibuat duplicate... kolom vendor isinya : nama vendor, pic..."
                 // If we automate, we might guess default PIC or leave null if allowed. 
+                // Fetch Full Vendor & PIC Details for Snapshot
+                const { data: fullVendor } = await supabase.from("vendors").select("*").eq("id", vendorId).single();
+
                 // Let's fetch the first PIC for this vendor.
-                const { data: pics } = await supabase.from("vendor_pics").select("id").eq("vendor_id", vendorId).limit(1);
-                const picId = pics?.[0]?.id;
+                const { data: pics } = await supabase.from("vendor_pics").select("*").eq("vendor_id", vendorId).limit(1);
+                const firstPic = pics?.[0];
+                const picId = firstPic?.id;
 
                 if (!picId) {
                     console.warn(`No PIC found for vendor ${vendorId}, skipping or creating without PIC(will fail constraint ?)`);
-                    // constraint might exist. 
                 }
+
+                const snapshotData = {
+                    vendor: fullVendor,
+                    pic: firstPic
+                };
 
                 // Create PO
                 const { data: po, error } = await (supabase as any).from("purchase_orders").insert({
@@ -268,7 +276,8 @@ id,
                     discount: setting?.discount || 0,
                     dp_amount: setting?.dp_amount || null,
                     dp_percentage: setting?.dp_percentage || null,
-                    payment_terms: setting?.payment_terms || null
+                    payment_terms: setting?.payment_terms || null,
+                    vendor_snapshot: snapshotData
                 }).select().single();
 
                 if (error) {
@@ -827,57 +836,63 @@ export default function PurchaseOrders() {
             let mappedPOs: PO[] = [];
             let groups: Record<string, any> = {}; // Defined here to be accessible throughout
             try {
-                mappedPOs = (data || []).map((po: any) => ({
-                    id: po.id,
-                    creator: po.creator,
-                    po_number: po.po_number,
-                    created_at: po.created_at,
-                    created_by: po.created_by, // Ensure raw UUID is available
-                    vendor: {
-                        ...(po.vendor || {}),
-                        address: po.vendor?.office_address
-                    },
-                    vendor_id: po.vendor_id!,
-                    vendor_pic_id: po.vendor_pic_id,
-                    vendor_logo: po.vendor?.logo,
-                    vendor_address: po.vendor?.office_address,
-                    vendor_pic: po.vendor_pic || { name: "-" },
-                    vendor_letter_number: po.vendor_letter_number,
-                    vendor_letter_date: po.vendor_letter_date,
-                    subject: po.subject,
-                    discount: po.discount,
-                    ppn: po.ppn,
-                    notes: po.notes,
-                    franco: po.franco,
-                    delivery_time: po.delivery_time,
-                    payment_term: po.payment_term,
-                    status: po.status || 'pending',
-                    transfer_proof_url: po.transfer_proof_url,
-                    transfer_proof_date: po.transfer_proof_date,
-                    quotations: (po.quotations || []).map((pq: any) => {
-                        // Check if any PO In related to this quotation has an Internal Letter
-                        const hasInternalLetter = pq.quotation?.po_in?.some((pi: any) => pi.internal_letters && pi.internal_letters.length > 0);
+                mappedPOs = (data || []).map((po: any) => {
+                    const snapshot = po.vendor_snapshot;
+                    const vendorData = snapshot?.vendor || po.vendor || {};
+                    const picData = snapshot?.pic || po.vendor_pic || { name: "-" };
 
-                        // Check completion status
-                        const isCompleted = pq.quotation?.po_in?.some((pi: any) => pi.is_completed);
+                    return {
+                        id: po.id,
+                        creator: po.creator,
+                        po_number: po.po_number,
+                        created_at: po.created_at,
+                        created_by: po.created_by,
+                        vendor: {
+                            ...vendorData,
+                            address: vendorData.office_address || vendorData.address
+                        },
+                        vendor_id: po.vendor_id!,
+                        vendor_pic_id: po.vendor_pic_id,
+                        vendor_logo: vendorData.logo || po.vendor?.logo,
+                        vendor_address: vendorData.office_address || vendorData.address,
+                        vendor_pic: picData,
+                        vendor_letter_number: po.vendor_letter_number,
+                        vendor_letter_date: po.vendor_letter_date,
+                        subject: po.subject,
+                        discount: po.discount,
+                        ppn: po.ppn,
+                        notes: po.notes,
+                        franco: po.franco,
+                        delivery_time: po.delivery_time,
+                        payment_term: po.payment_term,
+                        status: po.status || 'pending',
+                        transfer_proof_url: po.transfer_proof_url,
+                        transfer_proof_date: po.transfer_proof_date,
+                        quotations: (po.quotations || []).map((pq: any) => {
+                            // Check if any PO In related to this quotation has an Internal Letter
+                            const hasInternalLetter = pq.quotation?.po_in?.some((pi: any) => pi.internal_letters && pi.internal_letters.length > 0);
 
-                        return {
-                            id: pq.quotation?.id,
-                            quotation_number: pq.quotation?.quotation_number,
-                            created_at: pq.quotation?.created_at,
-                            po_in_link: hasInternalLetter, // Renaming variable conceptually in logic, but keeping name 'po_in_link' to avoid breaking UI strictly, or better rename it.
-                            // Let's keep 'po_in_link' name but change semantics to "has processed letter".
-                            completed: isCompleted,
-                            request: {
-                                ...(pq.quotation?.request || {}),
-                                request_date: pq.quotation?.request?.created_at,
-                                attachments: pq.quotation?.request?.customer_attachments || []
-                            },
-                            balance_link: pq.quotation?.balance_link
-                        };
-                    }),
-                    attachments: po.attachments || []
-                }));
+                            // Check completion status
+                            const isCompleted = pq.quotation?.po_in?.some((pi: any) => pi.is_completed);
+
+                            return {
+                                id: pq.quotation?.id,
+                                quotation_number: pq.quotation?.quotation_number,
+                                created_at: pq.quotation?.created_at,
+                                po_in_link: hasInternalLetter, // Renaming variable conceptually in logic, but keeping name 'po_in_link' to avoid breaking UI strictly, or better rename it.
+                                // Let's keep 'po_in_link' name but change semantics to "has processed letter".
+                                completed: isCompleted,
+                                request: {
+                                    ...(pq.quotation?.request || {}),
+                                    request_date: pq.quotation?.request?.created_at,
+                                    attachments: pq.quotation?.request?.customer_attachments || []
+                                },
+                                balance_link: pq.quotation?.balance_link
+                            };
+                        }),
+                        attachments: po.attachments || []
+                    };
+                });
 
 
                 // Extract IDs for lookup

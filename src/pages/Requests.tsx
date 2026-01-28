@@ -509,9 +509,37 @@ const Requests = () => {
         }
       }
 
+      // Fetch Full Customer & PIC Details for Snapshot
+      const { data: fullCustomer } = await supabase
+        .from("customers")
+        .select("*")
+        .eq("id", formData.customer_id)
+        .single();
+
+      const { data: fullPic } = await supabase
+        .from("customer_pics")
+        .select("*")
+        .eq("id", formData.customer_pic_id)
+        .single();
+
+      const snapshotData = {
+        customer: fullCustomer,
+        pic: fullPic
+      };
+
+      if (!fullCustomer) {
+        toast.error("Data pelanggan tidak ditemukan untuk snapshot");
+        return;
+      }
+
+      const updatePayload = {
+        ...updateData,
+        customer_snapshot: snapshotData
+      };
+
       const { error } = await supabase
         .from("requests")
-        .update(updateData)
+        .update(updatePayload)
         .eq("id", editingRequest.id);
 
       if (error) {
@@ -528,7 +556,7 @@ const Requests = () => {
       // Get customer code
       const { data: customerData } = await supabase
         .from("customers")
-        .select("customer_code")
+        .select("*") // Fetch all for snapshot
         .eq("id", formData.customer_id)
         .single();
 
@@ -537,6 +565,17 @@ const Requests = () => {
         return;
       }
 
+      const { data: picData } = await supabase
+        .from("customer_pics")
+        .select("*")
+        .eq("id", formData.customer_pic_id)
+        .single();
+
+      const snapshotData = {
+        customer: customerData,
+        pic: picData
+      };
+
       // Get total count for global sequence ID - DEPRECATED for new format
       // Generate random 6 character alphanumeric
       const randomString = Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -544,7 +583,7 @@ const Requests = () => {
 
       const { data, error } = await supabase
         .from("requests")
-        .insert({ ...requestData, request_code: requestCode })
+        .insert({ ...requestData, request_code: requestCode, customer_snapshot: snapshotData })
         .select()
         .single();
 

@@ -40,6 +40,7 @@ interface PO {
     payment_term?: string;
     status?: 'pending' | 'approved';
     transfer_proof_url?: string | null;
+    snapshot_data?: any;
     quotations: Array<{
         id: string;
         quotation_number: string;
@@ -72,6 +73,18 @@ interface Company {
 export default function PurchaseOrderPrint({ po, onUpdate, internalNumberOverride, invoiceSubject, invoiceType }: { po: PO; onUpdate?: () => void; internalNumberOverride?: string; invoiceSubject?: string; invoiceType?: string }) {
     const [company, setCompany] = useState<Company | null>(null);
     const [items, setItems] = useState<any[]>([]);
+
+    // Snapshot Logic for Internal Letter (Customer)
+    const customerSnapshot = po.snapshot_data?.customer;
+    // Fallback chain: Snapshot -> Quotations Array (PO Out) -> Quotation Object (PO In/Invoice)
+    const legacyCustomer = po.quotations?.[0]?.request?.customer || (po as any).quotation?.request?.customer;
+    const customer = customerSnapshot || legacyCustomer;
+
+    // ... (rest of component) ...
+
+    // Update rendering to use `customer` variable instead of deep path
+    // We will do this by replacing the specific block in the rendering section
+
 
     // Local state - Init from DB fields if available
     const [notes, setNotes] = useState(po.notes || "-");
@@ -407,8 +420,8 @@ export default function PurchaseOrderPrint({ po, onUpdate, internalNumberOverrid
                                     <div class="info-section">
                                         <div class="info-grid">
                                             ${internalNumberOverride ? `
-                                                <span class="info-label">Customer</span><span class="info-colon">:</span><span class="info-value">${po.quotations?.[0]?.request?.customer?.company_name || "-"}</span>
-                                                <span class="info-label">Alamat</span><span class="info-colon">:</span><span class="info-value">${po.quotations?.[0]?.request?.customer?.address || "-"}</span>
+                                                <span class="info-label">Customer</span><span class="info-colon">:</span><span class="info-value">${customer?.company_name || "-"}</span>
+                                                <span class="info-label">Alamat</span><span class="info-colon">:</span><span class="info-value">${customer?.address || "-"}</span>
                                                 <span class="info-label">PIC</span><span class="info-colon">:</span><span class="info-value">${po.quotations?.[0]?.request?.customer_pic?.name || "-"}</span>
                                             ` : `
                                                 <span class="info-label">Vendor</span><span class="info-colon">:</span><span class="info-value">${po.vendor.company_name}</span>

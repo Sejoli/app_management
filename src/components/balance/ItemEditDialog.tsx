@@ -279,6 +279,20 @@ export default function ItemEditDialog({
       }
     }
 
+    // Fetch Full Vendor Details for Snapshot
+    let snapshotData = null;
+    if (selectedVendorId) {
+      const { data: fullVendor } = await supabase
+        .from("vendors")
+        .select("*")
+        .eq("id", selectedVendorId)
+        .single();
+
+      if (fullVendor) {
+        snapshotData = { vendor: fullVendor };
+      }
+    }
+
     const { error } = await supabase
       .from("balance_items")
       .update({
@@ -297,6 +311,7 @@ export default function ItemEditDialog({
         document_path: documentPaths.join(","),
         offering_letter_number: offeringLetterNumber,
         offering_date: offeringDate || null,
+        vendor_snapshot: snapshotData
       })
       .eq("id", item.id);
 

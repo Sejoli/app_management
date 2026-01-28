@@ -322,6 +322,18 @@ export default function AddItemForm({
 
     const { unitPrice, totalPrice } = calculateSellingPrice();
 
+    // Calculate position: Get max position + 1
+    const { data: maxPosData } = await supabase
+      .from("balance_items")
+      .select("position")
+      .eq("balance_id", balanceId)
+      .eq("balance_entry_id", entryId)
+      .order("position", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const nextPosition = (maxPosData?.position || 0) + 1;
+
     const { error } = await supabase.from("balance_items").insert({
       balance_id: balanceId,
       balance_entry_id: entryId,
@@ -341,6 +353,7 @@ export default function AddItemForm({
       difficulty,
       unit_selling_price: unitPrice,
       total_selling_price: totalPrice,
+      position: nextPosition,
     });
 
     if (error) {

@@ -1,4 +1,4 @@
-import { Building2, Users, Package, UserCircle, FileText, Scale, Settings, Briefcase, FileSpreadsheet, Truck, LayoutDashboard } from "lucide-react";
+import { Building2, Users, Package, UserCircle, FileText, Scale, Settings, Briefcase, FileSpreadsheet, Truck, LayoutDashboard, BookOpen } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
 import { useEffect, useState } from "react";
@@ -28,6 +28,7 @@ const ALL_MENU_ITEMS = [
   { title: "Pelanggan", url: "/customers", icon: Building2, key: "view_customers" },
   { title: "Vendor", url: "/vendors", icon: Package, key: "view_vendors" },
   { title: "Perusahaan", url: "/company", icon: Briefcase, key: "view_company" },
+  { title: "Manual Book", url: "/manual-book", icon: BookOpen, key: "view_manual_book" },
 ];
 
 interface UserProfile {
@@ -88,7 +89,7 @@ export function AppSidebar({ userProfile }: AppSidebarProps) {
         const allowedKeys = data.map(p => p.permission_key);
         // Always include items that might not be in DB yet or are public if needed
         const filteredItems = ALL_MENU_ITEMS.filter(item =>
-          item.key === 'view_dashboard' || allowedKeys.includes(item.key)
+          item.key === 'view_dashboard' || item.key === 'view_manual_book' || allowedKeys.includes(item.key)
         );
         setActiveMenuItems(filteredItems);
       }

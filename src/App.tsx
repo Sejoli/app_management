@@ -23,6 +23,7 @@ const PurchaseOrders = lazy(() => import("./pages/PurchaseOrders"));
 const InternalLetters = lazy(() => import("./pages/InternalLetters"));
 const TrackingPage = lazy(() => import("./pages/TrackingPage"));
 const InvoiceManagement = lazy(() => import("./pages/InvoiceManagement"));
+const ManualBook = lazy(() => import("./pages/ManualBook"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const Login = lazy(() => import("./pages/Login"));
 
@@ -212,6 +213,16 @@ const App = () => {
                   <AuthGuard>
                     <Layout>
                       <TrackingPage />
+                    </Layout>
+                  </AuthGuard>
+                }
+              />
+              <Route
+                path="/manual-book"
+                element={
+                  <AuthGuard>
+                    <Layout>
+                      <ManualBook />
                     </Layout>
                   </AuthGuard>
                 }

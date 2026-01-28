@@ -510,12 +510,32 @@ const InternalLetters = () => {
                 return;
             }
 
+            // Fetch Quotation with Customer for Snapshot
+            const { data: quoteData } = await supabase
+                .from("quotations")
+                .select(`
+                    *,
+                    request:requests (
+                        customer:customers(*)
+                    )
+                `)
+                .eq("id", quotationId)
+                .single();
+
+            let snapshotData = null;
+            if (quoteData?.request?.customer) {
+                snapshotData = {
+                    customer: quoteData.request.customer
+                }
+            }
+
             const { error } = await (supabase as any).from("po_ins").insert({
                 quotation_id: quotationId,
                 subject: "-",
                 invoice_type: "PELUNASAN",
                 vendor_letter_number: null,
-                vendor_letter_date: null
+                vendor_letter_date: null,
+                snapshot_data: snapshotData
             });
 
             if (error) throw error;

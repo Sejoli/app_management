@@ -166,8 +166,8 @@ export default function Balances() {
           letter_number,
           title,
           request_date,
-          customer:customers(company_name, delivery_address),
-          customer_pic:customer_pics(name, phone)
+          customer:customers(*),
+          customer_pic:customer_pics(*)
         ),
         creator:team_members!fk_created_by_team_member(name, user_id)
       `)
@@ -473,6 +473,10 @@ export default function Balances() {
             request_id: balance.request_id,
             quotation_number: quotationNumber,
             franco: balance.request.customer.delivery_address,
+            customer_snapshot: {
+              customer: (balance.request as any).customer,
+              pic: (balance.request as any).customer_pic
+            }
           })
           .select()
           .single();
