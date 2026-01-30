@@ -26,6 +26,7 @@ import { DeleteConfirmationDialog } from "@/components/DeleteConfirmationDialog"
 import { toast } from "sonner";
 import { format, isValid } from "date-fns";
 import { id } from "date-fns/locale";
+import { Search, ChevronLeft, ChevronRight } from "lucide-react";
 import {
   Collapsible,
   CollapsibleContent,
@@ -84,7 +85,10 @@ export default function TeamTab() {
   const [isLoading, setIsLoading] = useState(false);
   const [isDataLoading, setIsDataLoading] = useState(true);
   const [isError, setIsError] = useState(false);
-
+  // Filters
+  const [searchQuery, setSearchQuery] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
   // Form States
   const [formData, setFormData] = useState({
     name: "",
@@ -357,6 +361,21 @@ export default function TeamTab() {
     return `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/company-files/${path}`;
   };
 
+  const filteredMembers = members.filter((member) => {
+    const searchLower = searchQuery.toLowerCase();
+    return (
+      member.name?.toLowerCase().includes(searchLower) ||
+      member.email?.toLowerCase().includes(searchLower) ||
+      member.position?.toLowerCase().includes(searchLower)
+    );
+  });
+
+  const totalPages = Math.ceil(filteredMembers.length / itemsPerPage);
+  const paginatedMembers = filteredMembers.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -613,6 +632,50 @@ export default function TeamTab() {
         </Dialog>
       </div>
 
+      <div className="flex flex-col gap-4 bg-card p-4 rounded-lg border shadow-sm">
+        <div className="flex flex-col md:flex-row gap-4 justify-between items-start md:items-center">
+          <div className="relative w-full md:max-w-xs">
+            <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Cari anggota..."
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="pl-8 w-full"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">Rows per page:</span>
+            <Select
+              value={itemsPerPage.toString()}
+              onValueChange={(v) => {
+                setItemsPerPage(Number(v));
+                setCurrentPage(1);
+              }}
+            >
+              <SelectTrigger className="w-[70px]">
+                <SelectValue placeholder="10" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="5">5</SelectItem>
+                <SelectItem value="10">10</SelectItem>
+                <SelectItem value="20">20</SelectItem>
+                <SelectItem value="50">50</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <div className="flex flex-wrap justify-between items-center gap-4 pt-2 border-t">
+          <div className="flex items-center gap-4">
+            <div className="text-sm font-medium text-muted-foreground bg-muted/50 px-3 py-1 rounded-md">
+              Total Data: <span className="text-foreground">{filteredMembers.length}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div className="border rounded-lg">
         <Table>
           <TableHeader>
@@ -664,16 +727,16 @@ export default function TeamTab() {
                   Pastikan koneksi internet anda baik
                 </TableCell>
               </TableRow>
-            ) : members.length === 0 ? (
+            ) : paginatedMembers.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={7} className="text-center text-muted-foreground p-8">
-                  Belum ada anggota tim
+                  {searchQuery ? "Pencarian tidak ditemukan" : "Belum ada anggota tim"}
                 </TableCell>
               </TableRow>
             ) : (
-              members.map((member, index) => (
+              paginatedMembers.map((member, index) => (
                 <TableRow key={member.id}>
-                  <TableCell>{index + 1}</TableCell>
+                  <TableCell>{(currentPage - 1) * itemsPerPage + index + 1}</TableCell>
                   <TableCell>
                     <div className="flex items-start gap-4">
                       {member.photo_path ? (
@@ -734,7 +797,38 @@ export default function TeamTab() {
             )}
           </TableBody>
         </Table>
-      </div>
+      </div >
+
+      {
+        paginatedMembers.length > 0 && (
+          <div className="flex items-center justify-between p-4 border rounded-lg bg-card text-card-foreground shadow-sm">
+            <div className="text-sm text-muted-foreground">
+              Menampilkan {(currentPage - 1) * itemsPerPage + 1} sampai {Math.min(currentPage * itemsPerPage, filteredMembers.length)} dari {filteredMembers.length} entri
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <div className="text-sm font-medium">
+                Hal {currentPage} dari {totalPages}
+              </div>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        )
+      }
     </div >
   );
 }

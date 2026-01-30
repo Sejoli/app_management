@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
-import { Trash2, Plus, Check, ChevronsUpDown, Pencil } from "lucide-react";
+import { Trash2, Plus, Check, ChevronsUpDown, Pencil, Search, ChevronLeft, ChevronRight } from "lucide-react";
 import { DeleteConfirmationDialog } from "@/components/DeleteConfirmationDialog";
 import {
   Select,
@@ -35,6 +35,9 @@ export default function CustomerCostManagement() {
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>("");
   const [open, setOpen] = useState(false);
   const [editingSettingId, setEditingSettingId] = useState<string | null>(null);
+  const [customerSettingsSearch, setCustomerSettingsSearch] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
 
   // Fetch customers
   const { data: customers } = useQuery({
@@ -435,6 +438,17 @@ export default function CustomerCostManagement() {
     setEditingSettingId(null);
     setSelectedCustomerId("");
   };
+
+  // Filter and Pagination for Customer Settings
+  const filteredCustomerSettings = allCustomerSettings?.filter((setting: any) =>
+    setting.customer?.company_name?.toLowerCase().includes(customerSettingsSearch.toLowerCase())
+  ) || [];
+
+  const totalPages = Math.ceil(filteredCustomerSettings.length / itemsPerPage);
+  const paginatedCustomerSettings = filteredCustomerSettings.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
 
   return (
     <div className="container mx-auto py-8">
@@ -843,9 +857,24 @@ export default function CustomerCostManagement() {
                 )}
               </form>
 
-              <div className="space-y-2">
-                <h3 className="font-semibold">Daftar Pengaturan Customer</h3>
-                {allCustomerSettings?.map((setting: any) => (
+              <div className="space-y-4">
+                <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
+                  <h3 className="font-semibold">Daftar Pengaturan Customer</h3>
+                  <div className="relative w-full sm:w-64">
+                    <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Cari customer..."
+                      value={customerSettingsSearch}
+                      onChange={(e) => {
+                        setCustomerSettingsSearch(e.target.value);
+                        setCurrentPage(1);
+                      }}
+                      className="pl-8"
+                    />
+                  </div>
+                </div>
+
+                {paginatedCustomerSettings?.map((setting: any) => (
                   <div
                     key={setting.id}
                     className="flex items-center justify-between p-3 border rounded-lg"
@@ -879,6 +908,35 @@ export default function CustomerCostManagement() {
                     </div>
                   </div>
                 ))}
+
+                {paginatedCustomerSettings.length > 0 && (
+                  <div className="flex items-center justify-between pt-4 border-t">
+                    <div className="text-sm text-muted-foreground">
+                      Menampilkan {(currentPage - 1) * itemsPerPage + 1} - {Math.min(currentPage * itemsPerPage, filteredCustomerSettings.length)} dari {filteredCustomerSettings.length}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                        disabled={currentPage === 1}
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </Button>
+                      <div className="text-sm font-medium">
+                        Hal {currentPage} dari {totalPages}
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+                        disabled={currentPage === totalPages}
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
                 {!allCustomerSettings?.length && (
                   <p className="text-muted-foreground text-sm">
                     Belum ada pengaturan customer
@@ -889,6 +947,6 @@ export default function CustomerCostManagement() {
           </Card>
         </TabsContent>
       </Tabs>
-    </div>
+    </div >
   );
 }

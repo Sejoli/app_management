@@ -37,8 +37,11 @@ import {
 import { Plus, Trash2, Link as LinkIcon, Edit, Trash, FileText, Check, ChevronsUpDown, Search, Eye, ChevronLeft, ChevronRight } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { format, isToday, isThisWeek, isThisMonth, isValid } from "date-fns";
-import { id } from "date-fns/locale";
+import { format, isToday, isThisWeek, isThisMonth, isValid, startOfDay, endOfDay, isWithinInterval } from "date-fns";
+import { id as idLocale } from "date-fns/locale";
+import { DateRange } from "react-day-picker";
+import { DatePickerWithRange } from "@/components/ui/date-picker-with-range";
+import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
@@ -54,6 +57,7 @@ interface Request {
   letter_number: string;
   created_at: string;
   customer: {
+    id: string;
     company_name: string;
     delivery_address: string;
   };
@@ -74,6 +78,7 @@ interface Balance {
     title: string;
     request_date: string;
     customer: {
+      id: string;
       company_name: string;
       delivery_address: string;
     };
@@ -111,11 +116,15 @@ export default function Balances() {
   const navigate = useNavigate();
   const [balances, setBalances] = useState<Balance[]>([]);
   const [requests, setRequests] = useState<Request[]>([]);
+  const [customers, setCustomers] = useState<any[]>([]);
   const [selectedRequestIds, setSelectedRequestIds] = useState<string[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [open, setOpen] = useState(false);
   const [dateFilter, setDateFilter] = useState<"today" | "week" | "month" | "all">("today");
   const [searchTerm, setSearchTerm] = useState("");
+  const [dateRange, setDateRange] = useState<DateRange | undefined>();
+  const [selectedCustomer, setSelectedCustomer] = useState<string>("all");
+  const [openCombobox, setOpenCombobox] = useState(false);
   const [selectedEntries, setSelectedEntries] = useState<Map<string, Set<number>>>(new Map());
   const [quotationLinks, setQuotationLinks] = useState<QuotationLink[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -129,8 +138,17 @@ export default function Balances() {
   useEffect(() => {
     fetchBalances();
     fetchRequests();
+    fetchCustomers();
     fetchQuotationLinks();
   }, []);
+
+  const fetchCustomers = async () => {
+    const { data } = await supabase
+      .from("customers")
+      .select("id, company_name")
+      .order("company_name", { ascending: true });
+    if (data) setCustomers(data);
+  };
 
   const fetchQuotationLinks = async () => {
     const { data, error } = await supabase
@@ -370,7 +388,6 @@ export default function Balances() {
 
   // Enhanced Filter Logic
   const filteredBalances = balances.filter((balance) => {
-    if (!searchTerm) return true;
     const searchLower = searchTerm.toLowerCase();
 
     // Check Balance Entries and Quotations
@@ -381,7 +398,7 @@ export default function Balances() {
       return false;
     });
 
-    return (
+    const matchesSearch = (
       balance.request.request_code?.toLowerCase().includes(searchLower) ||
       balance.request.letter_number?.toLowerCase().includes(searchLower) ||
       balance.request.title?.toLowerCase().includes(searchLower) ||
@@ -390,6 +407,25 @@ export default function Balances() {
       balance.creator?.name?.toLowerCase().includes(searchLower) ||
       hasMatchingEntry
     );
+
+    if (!matchesSearch) return false;
+
+    // Date Filter
+    if (dateRange?.from) {
+      const bDate = new Date(balance.created_at);
+      if (dateRange.to) {
+        if (!isWithinInterval(bDate, { start: startOfDay(dateRange.from), end: endOfDay(dateRange.to) })) return false;
+      } else {
+        if (format(bDate, 'yyyy-MM-dd') !== format(dateRange.from, 'yyyy-MM-dd')) return false;
+      }
+    }
+
+    // Customer Filter
+    if (selectedCustomer !== "all") {
+      if (balance.request.customer.id !== selectedCustomer) return false;
+    }
+
+    return true;
   });
 
   const finalDisplayBalances = filteredBalances.map(balance => {
@@ -516,453 +552,531 @@ export default function Balances() {
       <div className="flex justify-between items-center">
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-4 justify-between items-center bg-card p-4 rounded-lg border shadow-sm mt-6">
-        <div className="flex items-center gap-2 flex-1 max-w-sm">
-          <Search className="h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="cari data...."
-            value={searchTerm}
-            onChange={(e) => {
-              setSearchTerm(e.target.value);
-              setCurrentPage(1);
-            }}
-            className="w-full"
-          />
-        </div>
-
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">Rows per page:</span>
-            <Select
-              value={itemsPerPage.toString()}
-              onValueChange={(v) => {
-                setItemsPerPage(Number(v));
+      <div className="flex flex-col gap-4 bg-card p-4 rounded-lg border shadow-sm mt-6">
+        <div className="flex flex-col md:flex-row gap-4 justify-between items-start md:items-center">
+          {/* Search Bar */}
+          <div className="relative w-full md:max-w-xs">
+            <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Cari data..."
+              value={searchTerm}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
                 setCurrentPage(1);
               }}
-            >
-              <SelectTrigger className="w-[70px]">
-                <SelectValue placeholder="10" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="5">5</SelectItem>
-                <SelectItem value="10">10</SelectItem>
-                <SelectItem value="20">20</SelectItem>
-                <SelectItem value="50">50</SelectItem>
-              </SelectContent>
-            </Select>
+              className="pl-8 w-full"
+            />
           </div>
 
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-            {canManage && (
-              <DialogTrigger asChild>
-                <Button>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Tambah Neraca
+          {/* Filters Group */}
+          <div className="flex flex-col sm:flex-row gap-6 w-full md:w-auto">
+            <DatePickerWithRange date={dateRange} setDate={setDateRange} className="w-full sm:w-[240px]" />
+
+            <Popover open={openCombobox} onOpenChange={setOpenCombobox}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  role="combobox"
+                  aria-expanded={openCombobox}
+                  className="w-full sm:w-[250px] justify-between"
+                >
+                  {selectedCustomer && selectedCustomer !== "all"
+                    ? customers.find((c) => c.id === selectedCustomer)?.company_name
+                    : "Semua Customer"}
+                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                 </Button>
-              </DialogTrigger>
-            )}
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Tambah Neraca Baru</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4 py-4">
-                <div className="flex gap-2 p-1 bg-muted rounded-lg">
-                  <Button
-                    variant={dateFilter === "today" ? "default" : "ghost"}
-                    size="sm"
-                    className="flex-1 h-7 text-xs"
-                    onClick={() => setDateFilter("today")}
-                  >
-                    Hari Ini
-                  </Button>
-                  <Button
-                    variant={dateFilter === "week" ? "default" : "ghost"}
-                    size="sm"
-                    className="flex-1 h-7 text-xs"
-                    onClick={() => setDateFilter("week")}
-                  >
-                    Minggu Ini
-                  </Button>
-                  <Button
-                    variant={dateFilter === "month" ? "default" : "ghost"}
-                    size="sm"
-                    className="flex-1 h-7 text-xs"
-                    onClick={() => setDateFilter("month")}
-                  >
-                    Bulan Ini
-                  </Button>
-                  <Button
-                    variant={dateFilter === "all" ? "default" : "ghost"}
-                    size="sm"
-                    className="flex-1 h-7 text-xs"
-                    onClick={() => setDateFilter("all")}
-                  >
-                    Semua
-                  </Button>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Pilih Permintaan (Bisa lebih dari satu)</label>
-                  <Popover open={open} onOpenChange={setOpen}>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        role="combobox"
-                        aria-expanded={open}
-                        className="w-full justify-between font-normal text-left h-auto min-h-[40px]"
+              </PopoverTrigger>
+              <PopoverContent className="w-[250px] p-0">
+                <Command>
+                  <CommandInput placeholder="Cari customer..." />
+                  <CommandList>
+                    <CommandEmpty>No customer found.</CommandEmpty>
+                    <CommandGroup>
+                      <CommandItem
+                        value="Semua Customer"
+                        onSelect={() => {
+                          setSelectedCustomer("all");
+                          setOpenCombobox(false);
+                        }}
                       >
-                        {selectedRequestIds.length > 0
-                          ? `${selectedRequestIds.length} permintaan dipilih`
-                          : "Pilih permintaan..."}
-                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-[500px] p-0" align="start">
-                      <Command>
-                        <CommandInput placeholder="Cari permintaan..." />
-                        <CommandList>
-                          <CommandEmpty>Pencarian tidak ditemukan.</CommandEmpty>
-                          <CommandGroup>
-                            {getFilteredRequests().map((request) => {
-                              const isExisting = balances.some(b => b.request_id === request.id);
-                              const isSelected = selectedRequestIds.includes(request.id);
+                        <Check
+                          className={cn(
+                            "mr-2 h-4 w-4",
+                            selectedCustomer === "all" ? "opacity-100" : "opacity-0"
+                          )}
+                        />
+                        Semua Customer
+                      </CommandItem>
+                      {customers.map((c) => (
+                        <CommandItem
+                          key={c.id}
+                          value={c.company_name}
+                          onSelect={() => {
+                            setSelectedCustomer(c.id);
+                            setOpenCombobox(false);
+                          }}
+                        >
+                          <Check
+                            className={cn(
+                              "mr-2 h-4 w-4",
+                              selectedCustomer === c.id ? "opacity-100" : "opacity-0"
+                            )}
+                          />
+                          {c.company_name}
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
+          </div>
+        </div>
 
-                              return (
-                                <CommandItem
-                                  key={request.id}
-                                  value={`${request.request_code} ${request.letter_number} ${request.customer.company_name}`}
-                                  disabled={isExisting}
-                                  onSelect={() => {
-                                    if (isExisting) return;
-                                    setSelectedRequestIds(prev =>
-                                      isSelected
-                                        ? prev.filter(id => id !== request.id)
-                                        : [...prev, request.id]
-                                    );
-                                  }}
-                                  className="flex items-center gap-2 cursor-pointer"
-                                >
-                                  <div className={`w-4 h-4 border rounded flex items-center justify-center ${isSelected ? 'bg-primary border-primary text-white' : 'border-gray-400'}`}>
-                                    {isSelected && <Check className="h-3 w-3" />}
-                                  </div>
-                                  <div className="flex-1">
-                                    <div className="flex items-center gap-2">
-                                      <span className={isExisting ? "text-muted-foreground" : ""}>
-                                        {request.request_code} - {request.letter_number}
-                                      </span>
-                                      {isExisting && (
-                                        <span className="text-xs text-amber-600 font-medium bg-amber-50 px-1.5 py-0.5 rounded">
-                                          Sudah ada di tabel
-                                        </span>
-                                      )}
-                                    </div>
-                                    <div className="text-xs text-muted-foreground">
-                                      {request.customer.company_name}
-                                    </div>
-                                  </div>
-                                  <span className="text-xs text-muted-foreground whitespace-nowrap ml-2">
-                                    {request.created_at && isValid(new Date(request.created_at)) ? format(new Date(request.created_at), "dd/MM/yyyy", { locale: id }) : "-"}
-                                  </span>
-                                </CommandItem>
-                              );
-                            })}
-                          </CommandGroup>
-                        </CommandList>
-                      </Command>
-                    </PopoverContent>
-                  </Popover>
-                </div>
+        {/* Action Bar */}
+        <div className="flex flex-wrap justify-between items-center gap-4 pt-2 border-t">
+          <div className="flex items-center gap-4">
+            <div className="text-sm font-medium text-muted-foreground bg-muted/50 px-3 py-1 rounded-md">
+              Total Data: <span className="text-foreground">{finalDisplayBalances.length}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground whitespace-nowrap">Rows per page:</span>
+              <Select
+                value={itemsPerPage.toString()}
+                onValueChange={(v) => {
+                  setItemsPerPage(Number(v));
+                  setCurrentPage(1);
+                }}
+              >
+                <SelectTrigger className="w-[70px]">
+                  <SelectValue placeholder="10" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="5">5</SelectItem>
+                  <SelectItem value="10">10</SelectItem>
+                  <SelectItem value="20">20</SelectItem>
+                  <SelectItem value="50">50</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
 
-                <div className="flex justify-end gap-2 pt-4">
-                  <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Batal</Button>
-                  <Button onClick={handleCreateBalance} disabled={selectedRequestIds.length === 0}>
-                    Buat {selectedRequestIds.length > 0 ? `(${selectedRequestIds.length})` : ''} Neraca
+          <div className="flex items-center gap-2">
+            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+              {canManage && (
+                <DialogTrigger asChild>
+                  <Button>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Tambah Neraca
                   </Button>
-                </div>
-              </div>
-            </DialogContent>
-          </Dialog>
+                </DialogTrigger>
+              )}
+              {/* Dialog Content Skipped for brevity, assuming standard render */}
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Tambah Neraca Baru</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  <div className="flex gap-2 p-1 bg-muted rounded-lg">
+                    <Button
+                      variant={dateFilter === "today" ? "default" : "ghost"}
+                      size="sm"
+                      className="flex-1 h-7 text-xs"
+                      onClick={() => setDateFilter("today")}
+                    >
+                      Hari Ini
+                    </Button>
+                    <Button
+                      variant={dateFilter === "week" ? "default" : "ghost"}
+                      size="sm"
+                      className="flex-1 h-7 text-xs"
+                      onClick={() => setDateFilter("week")}
+                    >
+                      Minggu Ini
+                    </Button>
+                    <Button
+                      variant={dateFilter === "month" ? "default" : "ghost"}
+                      size="sm"
+                      className="flex-1 h-7 text-xs"
+                      onClick={() => setDateFilter("month")}
+                    >
+                      Bulan Ini
+                    </Button>
+                    <Button
+                      variant={dateFilter === "all" ? "default" : "ghost"}
+                      size="sm"
+                      className="flex-1 h-7 text-xs"
+                      onClick={() => setDateFilter("all")}
+                    >
+                      Semua
+                    </Button>
+                  </div>
 
-          {canManage && hasSelectedEntries() && (
-            <Button onClick={handleCreateQuotation} variant="default">
-              <FileText className="h-4 w-4 mr-2" />
-              Buat Penawaran
-            </Button>
-          )}
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Pilih Permintaan (Bisa lebih dari satu)</label>
+                    <Popover open={open} onOpenChange={setOpen}>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          role="combobox"
+                          aria-expanded={open}
+                          className="w-full justify-between font-normal text-left h-auto min-h-[40px]"
+                        >
+                          {selectedRequestIds.length > 0
+                            ? `${selectedRequestIds.length} permintaan dipilih`
+                            : "Pilih permintaan..."}
+                          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[500px] p-0" align="start">
+                        <Command>
+                          <CommandInput placeholder="Cari permintaan..." />
+                          <CommandList>
+                            <CommandEmpty>Pencarian tidak ditemukan.</CommandEmpty>
+                            <CommandGroup>
+                              {getFilteredRequests().map((request) => {
+                                const isExisting = balances.some(b => b.request_id === request.id);
+                                const isSelected = selectedRequestIds.includes(request.id);
+
+                                return (
+                                  <CommandItem
+                                    key={request.id}
+                                    value={`${request.request_code} ${request.letter_number} ${request.customer.company_name}`}
+                                    disabled={isExisting}
+                                    onSelect={() => {
+                                      if (isExisting) return;
+                                      setSelectedRequestIds(prev =>
+                                        isSelected
+                                          ? prev.filter(id => id !== request.id)
+                                          : [...prev, request.id]
+                                      );
+                                    }}
+                                    className="flex items-center gap-2 cursor-pointer"
+                                  >
+                                    <div className={`w-4 h-4 border rounded flex items-center justify-center ${isSelected ? 'bg-primary border-primary text-white' : 'border-gray-400'}`}>
+                                      {isSelected && <Check className="h-3 w-3" />}
+                                    </div>
+                                    <div className="flex-1">
+                                      <div className="flex items-center gap-2">
+                                        <span className={isExisting ? "text-muted-foreground" : ""}>
+                                          {request.request_code} - {request.letter_number}
+                                        </span>
+                                        {isExisting && (
+                                          <span className="text-xs text-amber-600 font-medium bg-amber-50 px-1.5 py-0.5 rounded">
+                                            Sudah ada di tabel
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className="text-xs text-muted-foreground">
+                                        {request.customer.company_name}
+                                      </div>
+                                    </div>
+                                    <span className="text-xs text-muted-foreground whitespace-nowrap ml-2">
+                                      {request.created_at && isValid(new Date(request.created_at)) ? format(new Date(request.created_at), "dd/MM/yyyy", { locale: idLocale }) : "-"}
+                                    </span>
+                                  </CommandItem>
+                                );
+                              })}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-4">
+                    <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Batal</Button>
+                    <Button onClick={handleCreateBalance} disabled={selectedRequestIds.length === 0}>
+                      Buat {selectedRequestIds.length > 0 ? `(${selectedRequestIds.length})` : ''} Neraca
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+
+            {canManage && hasSelectedEntries() && (
+              <Button onClick={handleCreateQuotation} variant="default">
+                <FileText className="h-4 w-4 mr-2" />
+                Buat Penawaran
+              </Button>
+            )}
+          </div>
         </div>
       </div>
 
-      <div className="border rounded-lg bg-card">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-12 whitespace-nowrap">No</TableHead>
-              <TableHead className="whitespace-nowrap">Permintaan Pelanggan</TableHead>
-              <TableHead className="whitespace-nowrap">Data</TableHead>
-              {userRole && userRole !== 'staff' && <TableHead className="whitespace-nowrap">Dibuat Oleh</TableHead>}
-              <TableHead className="text-right whitespace-nowrap">Aksi</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              Array.from({ length: 5 }).map((_, index) => (
-                <TableRow key={index}>
-                  <TableCell><Skeleton className="h-4 w-4" /></TableCell>
-                  <TableCell><Skeleton className="h-4 w-24" /></TableCell>
-                  <TableCell>
-                    <div className="space-y-2">
-                      <Skeleton className="h-4 w-40" />
-                      <Skeleton className="h-4 w-32" />
-                    </div>
-                  </TableCell>
-                  {userRole && userRole !== 'staff' && <TableCell><Skeleton className="h-4 w-20" /></TableCell>}
-                  <TableCell><Skeleton className="h-4 w-48" /></TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-2">
-                      <Skeleton className="h-8 w-8" />
-                      <Skeleton className="h-8 w-8" />
-                    </div>
+      <div className="border rounded-lg bg-card overflow-hidden">
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-12 whitespace-nowrap">No</TableHead>
+                <TableHead className="whitespace-nowrap">Permintaan Pelanggan</TableHead>
+                <TableHead className="whitespace-nowrap">Data</TableHead>
+                {userRole && userRole !== 'staff' && <TableHead className="whitespace-nowrap">Dibuat Oleh</TableHead>}
+                <TableHead className="text-right whitespace-nowrap">Aksi</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {isLoading ? (
+                Array.from({ length: 5 }).map((_, index) => (
+                  <TableRow key={index}>
+                    <TableCell><Skeleton className="h-4 w-4" /></TableCell>
+                    <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                    <TableCell>
+                      <div className="space-y-2">
+                        <Skeleton className="h-4 w-40" />
+                        <Skeleton className="h-4 w-32" />
+                      </div>
+                    </TableCell>
+                    {userRole && userRole !== 'staff' && <TableCell><Skeleton className="h-4 w-20" /></TableCell>}
+                    <TableCell><Skeleton className="h-4 w-48" /></TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-2">
+                        <Skeleton className="h-8 w-8" />
+                        <Skeleton className="h-8 w-8" />
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              ) : isError ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center text-destructive p-8">
+                    Pastikan koneksi internet anda baik
                   </TableCell>
                 </TableRow>
-              ))
-            ) : isError ? (
-              <TableRow>
-                <TableCell colSpan={6} className="text-center text-destructive p-8">
-                  Pastikan koneksi internet anda baik
-                </TableCell>
-              </TableRow>
-            ) : paginatedBalances.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={6} className="text-center text-muted-foreground p-8">
-                  {searchTerm ? "Pencarian tidak ditemukan" : "Belum ada neraca ditemukan"}
-                </TableCell>
-              </TableRow>
-            ) : (
-              paginatedBalances.map((balance, index) => (
-                <TableRow key={balance.id}>
-                  <TableCell>{startIndex + index + 1}</TableCell>
-
-                  <TableCell className="relative whitespace-nowrap">
-                    {(() => {
-                      const isBalanceCompleted = balance.balance_entries.some(entry => {
-                        const link = quotationLinks.find(l => l.balance_id === balance.id && l.entry_id === entry.id);
-                        return link?.quotation?.po_ins?.some((pi: any) => pi.is_completed);
-                      });
-
-                      return null; // Stamp Removed
-                    })()}
-                    <div className="flex flex-col gap-1 relative z-10">
-                      <span className="font-medium bg-green-100 text-green-800 px-2 py-1 rounded w-fit mb-1">
-                        {balance.request.request_code}
-                      </span>
-                      <span className="font-bold text-base">{balance.request.customer.company_name}</span>
-                      <span className="font-medium">{balance.request.title}</span>
-                      <div className="text-sm text-muted-foreground flex flex-col gap-1">
-                        <div>
-                          <span className="font-semibold">No Surat:</span> {balance.request.letter_number}
-                        </div>
-                        <div>
-                          <span className="font-semibold">PIC:</span> {balance.request.customer_pic.name}
-                        </div>
-                        <div>
-                          <span className="font-semibold">Tanggal:</span> {balance.request.request_date && isValid(new Date(balance.request.request_date)) ? format(new Date(balance.request.request_date), "dd/MM/yyyy", { locale: id }) : "-"}
-                        </div>
-                      </div>
-                      {balance.attachments.length > 0 && (
-                        <div className="flex flex-wrap gap-2 mt-1">
-                          {balance.attachments.map((attachment, idx) => (
-                            <a
-                              key={idx}
-                              href={getStorageUrl(`request-attachments/${attachment.file_path}`)}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="flex items-center gap-1 text-blue-600 hover:underline text-xs"
-                            >
-                              <LinkIcon className="h-3 w-3" />
-                              data {idx + 1}
-                            </a>
-                          ))}
-                        </div>
-                      )}
-                    </div>
+              ) : paginatedBalances.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center text-muted-foreground p-8">
+                    {searchTerm ? "Pencarian tidak ditemukan" : "Belum ada neraca ditemukan"}
                   </TableCell>
-                  <TableCell className="whitespace-nowrap">
-                    <div className="space-y-2">
-                      <div className="border rounded-md p-3 space-y-2 bg-card">
-                        {balance.balance_entries.map((entry, idx) => {
-                          const quotationLink = quotationLinks.find(
-                            link => link.balance_id === balance.id && link.entry_id === entry.id
-                          );
-                          const isLinked = !!quotationLink && !!quotationLink.quotation;
-                          const isClosed = quotationLink?.quotation?.is_closed;
-                          return (
-                            <div key={idx} className={`flex items-center gap-2 justify-between ${isClosed ? "opacity-60" : ""}`}>
-                              <div className="flex items-center gap-2">
-                                {/* Checkbox Visibility Logic:
+                </TableRow>
+              ) : (
+                paginatedBalances.map((balance, index) => (
+                  <TableRow key={balance.id}>
+                    <TableCell>{startIndex + index + 1}</TableCell>
+
+                    <TableCell className="relative whitespace-nowrap">
+                      {(() => {
+                        const isBalanceCompleted = balance.balance_entries.some(entry => {
+                          const link = quotationLinks.find(l => l.balance_id === balance.id && l.entry_id === entry.id);
+                          return link?.quotation?.po_ins?.some((pi: any) => pi.is_completed);
+                        });
+
+                        return null; // Stamp Removed
+                      })()}
+                      <div className="flex flex-col gap-1 relative z-10">
+                        <span className="font-medium bg-green-100 text-green-800 px-2 py-1 rounded w-fit mb-1">
+                          {balance.request.request_code}
+                        </span>
+                        <span className="font-bold text-base">{balance.request.customer.company_name}</span>
+                        <span className="font-medium">{balance.request.title}</span>
+                        <div className="text-sm text-muted-foreground flex flex-col gap-1">
+                          <div>
+                            <span className="font-semibold">No Surat:</span> {balance.request.letter_number}
+                          </div>
+                          <div>
+                            <span className="font-semibold">PIC:</span> {balance.request.customer_pic.name}
+                          </div>
+                          <div>
+                            <span className="font-semibold">Tanggal:</span> {balance.request.request_date && isValid(new Date(balance.request.request_date)) ? format(new Date(balance.request.request_date), "dd/MM/yyyy", { locale: idLocale }) : "-"}
+                          </div>
+                        </div>
+                        {balance.attachments.length > 0 && (
+                          <div className="flex flex-wrap gap-2 mt-1">
+                            {balance.attachments.map((attachment, idx) => (
+                              <a
+                                key={idx}
+                                href={getStorageUrl(`request-attachments/${attachment.file_path}`)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-center gap-1 text-blue-600 hover:underline text-xs"
+                              >
+                                <LinkIcon className="h-3 w-3" />
+                                data {idx + 1}
+                              </a>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      <div className="space-y-2">
+                        <div className="border rounded-md p-3 space-y-2 bg-card">
+                          {balance.balance_entries.map((entry, idx) => {
+                            const quotationLink = quotationLinks.find(
+                              link => link.balance_id === balance.id && link.entry_id === entry.id
+                            );
+                            const isLinked = !!quotationLink && !!quotationLink.quotation;
+                            const isClosed = quotationLink?.quotation?.is_closed;
+                            return (
+                              <div key={idx} className={`flex items-center gap-2 justify-between ${isClosed ? "opacity-60" : ""}`}>
+                                <div className="flex items-center gap-2">
+                                  {/* Checkbox Visibility Logic:
                                     - Always show for Owner / Super Admin
                                     - For Pimpinan (viewing others' data): ONLY show if it's already linked (isLinked). If not linked, hide it.
                                  */}
-                                {((userRole === 'pimpinan' && balance.creator?.user_id !== userId && !isLinked)) ? (
-                                  <div className="w-4 h-4 mr-2" />
-                                ) : (
-                                  <Checkbox
-                                    checked={isLinked || selectedEntries.get(balance.id)?.has(entry.id) || false}
-                                    disabled={isLinked || (userRole === 'pimpinan' && balance.creator?.user_id !== userId)}
-                                    onCheckedChange={(checked) => {
-                                      if (isLinked) return;
-                                      const newSelected = new Map(selectedEntries);
-                                      if (!newSelected.has(balance.id)) {
-                                        newSelected.set(balance.id, new Set());
-                                      }
-                                      const entrySet = newSelected.get(balance.id)!;
-                                      if (checked) {
-                                        entrySet.add(entry.id);
-                                      } else {
-                                        entrySet.delete(entry.id);
-                                      }
-                                      setSelectedEntries(newSelected);
-                                    }}
-                                  />
-                                )}
-                                <div className="flex flex-col">
-                                  <span className={`text-xs font-mono bg-amber-50 text-amber-900 border border-amber-200 px-1 rounded ${isLinked ? 'opacity-70' : ''} ${isClosed ? 'line-through' : ''}`}>
-                                    {idx + 1}. {entry.code}
-                                  </span>
-                                  {isLinked && quotationLink?.quotation && (
-                                    <span className={`text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded w-fit mt-0.5 ${isClosed ? 'line-through' : ''}`}>
-                                      {quotationLink.quotation.quotation_number}{isClosed && <span className="text-red-600 font-bold"> (Tutup)</span>}
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-3">
-                                <div className="flex flex-col items-end justify-center h-full">
-                                  {entry.date && (
-                                    <span className="text-[10px] text-muted-foreground">
-                                      {isValid(new Date(entry.date)) ? format(new Date(entry.date), "dd/MM/yyyy", { locale: id }) : ""}
-                                    </span>
-                                  )}
-                                  {isLinked && quotationLink?.quotation?.created_at && (
-                                    <span className="text-[10px] text-muted-foreground mt-0.5">
-                                      {isValid(new Date(quotationLink.quotation.created_at)) ? format(new Date(quotationLink.quotation.created_at), "dd/MM/yyyy", { locale: id }) : ""}
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="flex gap-1">
-                                  {/* Edit/View Button */}
-                                  {(canManage || userRole === 'pimpinan' || userRole === 'staff') && (
-                                    <Button
-                                      size="icon"
-                                      variant="ghost"
-                                      className="h-6 w-6"
-                                      onClick={() => handleEditEntry(balance.id, entry.id, entry.code)}
-                                    >
-                                      {/* Logic: Show Eye if "Locked" (PO Exists) OR if User is NOT owner/admin viewing others data */}
-                                      {/* Locked Condition: Linked Quotation has POs */}
-                                      {(() => {
-                                        const isLocked = quotationLink?.quotation?.po_ins && quotationLink.quotation.po_ins.length > 0;
-                                        const isClosed = quotationLink?.quotation?.is_closed;
-                                        const isOwnerOrAdmin = balance.created_by === userId || userRole === 'super_admin';
-
-                                        if (isLocked || isClosed) return <Eye className="h-3 w-3" />; // Always View Only if Locked or Closed
-                                        if (isOwnerOrAdmin) return <Edit className="h-3 w-3" />; // Editable if Owner & Not Locked/Closed
-                                        return <Eye className="h-3 w-3" />; // View Only otherwise (Pimpinan viewing others)
-                                      })()}
-                                    </Button>
-                                  )}
-
-                                  {/* Delete Button - Only for Owner/SuperAdmin */}
-                                  {!isLinked && canManage && (balance.created_by === userId || userRole === 'super_admin') && (
-                                    <DeleteConfirmationDialog
-                                      onDelete={() => handleDeleteEntry(balance.id, entry.id, balance.balance_entries)}
-                                      trigger={
-                                        <Button
-                                          size="icon"
-                                          variant="ghost"
-                                          className="h-6 w-6"
-                                        >
-                                          <Trash className="h-3 w-3 text-destructive" />
-                                        </Button>
-                                      }
+                                  {((userRole === 'pimpinan' && balance.creator?.user_id !== userId && !isLinked)) ? (
+                                    <div className="w-4 h-4 mr-2" />
+                                  ) : (
+                                    <Checkbox
+                                      checked={isLinked || selectedEntries.get(balance.id)?.has(entry.id) || false}
+                                      disabled={isLinked || (userRole === 'pimpinan' && balance.creator?.user_id !== userId)}
+                                      onCheckedChange={(checked) => {
+                                        if (isLinked) return;
+                                        const newSelected = new Map(selectedEntries);
+                                        if (!newSelected.has(balance.id)) {
+                                          newSelected.set(balance.id, new Set());
+                                        }
+                                        const entrySet = newSelected.get(balance.id)!;
+                                        if (checked) {
+                                          entrySet.add(entry.id);
+                                        } else {
+                                          entrySet.delete(entry.id);
+                                        }
+                                        setSelectedEntries(newSelected);
+                                      }}
                                     />
                                   )}
+                                  <div className="flex flex-col">
+                                    <span className={`text-xs font-mono bg-amber-50 text-amber-900 border border-amber-200 px-1 rounded ${isLinked ? 'opacity-70' : ''} ${isClosed ? 'line-through' : ''}`}>
+                                      {idx + 1}. {entry.code}
+                                    </span>
+                                    {isLinked && quotationLink?.quotation && (
+                                      <span className={`text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded w-fit mt-0.5 ${isClosed ? 'line-through' : ''}`}>
+                                        {quotationLink.quotation.quotation_number}{isClosed && <span className="text-red-600 font-bold"> (Tutup)</span>}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                  <div className="flex flex-col items-end justify-center h-full">
+                                    {entry.date && (
+                                      <span className="text-[10px] text-muted-foreground">
+                                        {isValid(new Date(entry.date)) ? format(new Date(entry.date), "dd/MM/yyyy", { locale: idLocale }) : ""}
+                                      </span>
+                                    )}
+                                    {isLinked && quotationLink?.quotation?.created_at && (
+                                      <span className="text-[10px] text-muted-foreground mt-0.5">
+                                        {isValid(new Date(quotationLink.quotation.created_at)) ? format(new Date(quotationLink.quotation.created_at), "dd/MM/yyyy", { locale: idLocale }) : ""}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="flex gap-1">
+                                    {/* Edit/View Button */}
+                                    {(canManage || userRole === 'pimpinan' || userRole === 'staff') && (
+                                      <Button
+                                        size="icon"
+                                        variant="ghost"
+                                        className="h-6 w-6"
+                                        onClick={() => handleEditEntry(balance.id, entry.id, entry.code)}
+                                      >
+                                        {/* Logic: Show Eye if "Locked" (PO Exists) OR if User is NOT owner/admin viewing others data */}
+                                        {/* Locked Condition: Linked Quotation has POs */}
+                                        {(() => {
+                                          const isLocked = quotationLink?.quotation?.po_ins && quotationLink.quotation.po_ins.length > 0;
+                                          const isClosed = quotationLink?.quotation?.is_closed;
+                                          const isOwnerOrAdmin = balance.created_by === userId || userRole === 'super_admin';
+
+                                          if (isLocked || isClosed) return <Eye className="h-3 w-3" />; // Always View Only if Locked or Closed
+                                          if (isOwnerOrAdmin) return <Edit className="h-3 w-3" />; // Editable if Owner & Not Locked/Closed
+                                          return <Eye className="h-3 w-3" />; // View Only otherwise (Pimpinan viewing others)
+                                        })()}
+                                      </Button>
+                                    )}
+
+                                    {/* Delete Button - Only for Owner/SuperAdmin */}
+                                    {!isLinked && canManage && (balance.created_by === userId || userRole === 'super_admin') && (
+                                      <DeleteConfirmationDialog
+                                        onDelete={() => handleDeleteEntry(balance.id, entry.id, balance.balance_entries)}
+                                        trigger={
+                                          <Button
+                                            size="icon"
+                                            variant="ghost"
+                                            className="h-6 w-6"
+                                          >
+                                            <Trash className="h-3 w-3 text-destructive" />
+                                          </Button>
+                                        }
+                                      />
+                                    )}
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                      {canManage && (balance.created_by === userId || userRole === 'super_admin') && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleAddEntry(balance.id, balance.balance_entries)}
-                          className="w-full"
-                          disabled={balance.balance_entries.some(entry => {
-                            const link = quotationLinks.find(l => l.balance_id === balance.id && l.entry_id === entry.id);
-                            return link?.quotation?.po_ins?.some((pi: any) => pi.is_completed);
+                            );
                           })}
-                        >
-                          <Plus className="h-3 w-3 mr-1" />
-                          TAMBAH
-                        </Button>
-                      )}
-                    </div>
-                  </TableCell>
-                  {userRole && userRole !== 'staff' && (
-                    <TableCell className="align-top whitespace-nowrap">
-                      <div className="mt-4">
-                        <span className="text-sm font-medium">{balance.creator?.name || "-"}</span>
+                        </div>
+                        {canManage && (balance.created_by === userId || userRole === 'super_admin') && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleAddEntry(balance.id, balance.balance_entries)}
+                            className="w-full"
+                            disabled={balance.balance_entries.some(entry => {
+                              const link = quotationLinks.find(l => l.balance_id === balance.id && l.entry_id === entry.id);
+                              return link?.quotation?.po_ins?.some((pi: any) => pi.is_completed);
+                            })}
+                          >
+                            <Plus className="h-3 w-3 mr-1" />
+                            TAMBAH
+                          </Button>
+                        )}
                       </div>
                     </TableCell>
-                  )}
-                  <TableCell className="text-right relative overflow-hidden whitespace-nowrap">
-                    {/* Corner Badge */}
-                    {balance.balance_entries.some(entry => {
-                      const link = quotationLinks.find(l => l.balance_id === balance.id && l.entry_id === entry.id);
-                      return link?.quotation?.po_ins?.some((pi: any) => pi.status === 'completed');
-                    }) && (
-                        <div className="absolute top-0 right-0 w-[75px] h-[75px] overflow-hidden pointer-events-none z-20">
-                          <div className="absolute top-[10px] right-[-30px] w-[100px] text-center rotate-45 bg-green-600 text-white text-[9px] font-bold py-1 shadow-sm">
-                            SELESAI
-                          </div>
+                    {userRole && userRole !== 'staff' && (
+                      <TableCell className="align-top whitespace-nowrap">
+                        <div className="mt-4">
+                          <span className="text-sm font-medium">{balance.creator?.name || "-"}</span>
                         </div>
-                      )}
-                    <div className="relative z-10">
-                      {(() => {
-                        const isAnyLinked = balance.balance_entries.some(entry => {
-                          const link = quotationLinks.find(l => l.balance_id === balance.id && l.entry_id === entry.id);
-                          return !!link && !!link.quotation;
-                        });
+                      </TableCell>
+                    )}
+                    <TableCell className="text-right relative overflow-hidden whitespace-nowrap">
+                      {/* Corner Badge */}
+                      {balance.balance_entries.some(entry => {
+                        const link = quotationLinks.find(l => l.balance_id === balance.id && l.entry_id === entry.id);
+                        return link?.quotation?.po_ins?.some((pi: any) => pi.status === 'completed');
+                      }) && (
+                          <div className="absolute top-0 right-0 w-[75px] h-[75px] overflow-hidden pointer-events-none z-20">
+                            <div className="absolute top-[10px] right-[-30px] w-[100px] text-center rotate-45 bg-green-600 text-white text-[9px] font-bold py-1 shadow-sm">
+                              SELESAI
+                            </div>
+                          </div>
+                        )}
+                      <div className="relative z-10">
+                        {(() => {
+                          const isAnyLinked = balance.balance_entries.some(entry => {
+                            const link = quotationLinks.find(l => l.balance_id === balance.id && l.entry_id === entry.id);
+                            return !!link && !!link.quotation;
+                          });
 
-                        const isOwner = balance.created_by === userId;
-                        const isSuperAdmin = userRole === 'super_admin';
-                        const canDelete = !isAnyLinked && canManage && (isOwner || isSuperAdmin);
+                          const isOwner = balance.created_by === userId;
+                          const isSuperAdmin = userRole === 'super_admin';
+                          const canDelete = !isAnyLinked && canManage && (isOwner || isSuperAdmin);
 
-                        if (canDelete) {
-                          return (
-                            <DeleteConfirmationDialog
-                              onDelete={() => handleDeleteBalance(balance.id)}
-                              trigger={
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                >
-                                  <Trash2 className="h-4 w-4 text-destructive" />
-                                </Button>
-                              }
-                            />
-                          );
-                        }
-                        return null;
-                      })()}
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
+                          if (canDelete) {
+                            return (
+                              <DeleteConfirmationDialog
+                                onDelete={() => handleDeleteBalance(balance.id)}
+                                trigger={
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                  >
+                                    <Trash2 className="h-4 w-4 text-destructive" />
+                                  </Button>
+                                }
+                              />
+                            );
+                          }
+                          return null;
+                        })()}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
       </div>
 
       {paginatedBalances.length > 0 && (

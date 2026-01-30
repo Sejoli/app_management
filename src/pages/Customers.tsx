@@ -208,138 +208,147 @@ export default function Customers() {
         </TabsList>
 
         <TabsContent value="customers" className="space-y-6">
-          <div className="flex flex-col sm:flex-row gap-4 justify-between items-center bg-card p-4 rounded-lg border shadow-sm">
-            <div className="relative w-full sm:w-72">
-              <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="cari data...."
-                value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  setCurrentPage(1);
-                }}
-                className="pl-8"
-              />
-            </div>
-
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">Rows per page:</span>
-                <Select
-                  value={itemsPerPage.toString()}
-                  onValueChange={(v) => {
-                    setItemsPerPage(Number(v));
+          <div className="flex flex-col gap-4 bg-card p-4 rounded-lg border shadow-sm">
+            <div className="flex flex-col md:flex-row gap-4 justify-between items-start md:items-center">
+              <div className="relative w-full md:max-w-xs">
+                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Cari data..."
+                  value={searchQuery}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
                     setCurrentPage(1);
                   }}
-                >
-                  <SelectTrigger className="w-[70px]">
-                    <SelectValue placeholder="10" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="5">5</SelectItem>
-                    <SelectItem value="10">10</SelectItem>
-                    <SelectItem value="20">20</SelectItem>
-                    <SelectItem value="50">50</SelectItem>
-                  </SelectContent>
-                </Select>
+                  className="pl-8 w-full"
+                />
               </div>
 
-              <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button onClick={() => resetForm()} className="gap-2">
-                    <Plus className="h-4 w-4" />
-                    Tambah Pelanggan
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-                  <DialogHeader>
-                    <DialogTitle>
-                      {editingCustomer ? "Edit Pelanggan" : "Tambah Pelanggan Baru"}
-                    </DialogTitle>
-                  </DialogHeader>
-                  <form onSubmit={handleSubmit} className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
+              <div className="flex items-center gap-2 w-full md:w-auto">
+                <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+                  <DialogTrigger asChild>
+                    <Button onClick={() => resetForm()} className="gap-2 w-full md:w-auto">
+                      <Plus className="h-4 w-4" />
+                      Tambah Pelanggan
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+                    <DialogHeader>
+                      <DialogTitle>
+                        {editingCustomer ? "Edit Pelanggan" : "Tambah Pelanggan Baru"}
+                      </DialogTitle>
+                    </DialogHeader>
+                    <form onSubmit={handleSubmit} className="space-y-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="customer_code">Kode Pelanggan *</Label>
+                          <Input
+                            id="customer_code"
+                            value={formData.customer_code}
+                            onChange={(e) =>
+                              setFormData({ ...formData, customer_code: e.target.value })
+                            }
+                            required
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="company_name">Nama Perusahaan *</Label>
+                          <Input
+                            id="company_name"
+                            value={formData.company_name}
+                            onChange={(e) =>
+                              setFormData({ ...formData, company_name: e.target.value })
+                            }
+                            required
+                          />
+                        </div>
+                      </div>
                       <div className="space-y-2">
-                        <Label htmlFor="customer_code">Kode Pelanggan *</Label>
-                        <Input
-                          id="customer_code"
-                          value={formData.customer_code}
+                        <Label htmlFor="office_address">Alamat Kantor *</Label>
+                        <Textarea
+                          id="office_address"
+                          value={formData.office_address}
                           onChange={(e) =>
-                            setFormData({ ...formData, customer_code: e.target.value })
+                            setFormData({ ...formData, office_address: e.target.value })
                           }
                           required
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="company_name">Nama Perusahaan *</Label>
-                        <Input
-                          id="company_name"
-                          value={formData.company_name}
+                        <Label htmlFor="delivery_address">Alamat Pengiriman *</Label>
+                        <Textarea
+                          id="delivery_address"
+                          value={formData.delivery_address}
                           onChange={(e) =>
-                            setFormData({ ...formData, company_name: e.target.value })
+                            setFormData({ ...formData, delivery_address: e.target.value })
                           }
                           required
                         />
                       </div>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="office_address">Alamat Kantor *</Label>
-                      <Textarea
-                        id="office_address"
-                        value={formData.office_address}
-                        onChange={(e) =>
-                          setFormData({ ...formData, office_address: e.target.value })
-                        }
-                        required
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="delivery_address">Alamat Pengiriman *</Label>
-                      <Textarea
-                        id="delivery_address"
-                        value={formData.delivery_address}
-                        onChange={(e) =>
-                          setFormData({ ...formData, delivery_address: e.target.value })
-                        }
-                        required
-                      />
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="email">Email *</Label>
-                        <Input
-                          id="email"
-                          type="email"
-                          value={formData.email}
-                          onChange={(e) =>
-                            setFormData({ ...formData, email: e.target.value })
-                          }
-                          required
-                        />
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="email">Email *</Label>
+                          <Input
+                            id="email"
+                            type="email"
+                            value={formData.email}
+                            onChange={(e) =>
+                              setFormData({ ...formData, email: e.target.value })
+                            }
+                            required
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="npwp">NPWP *</Label>
+                          <Input
+                            id="npwp"
+                            value={formData.npwp}
+                            onChange={(e) =>
+                              setFormData({ ...formData, npwp: e.target.value })
+                            }
+                            required
+                          />
+                        </div>
                       </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="npwp">NPWP *</Label>
-                        <Input
-                          id="npwp"
-                          value={formData.npwp}
-                          onChange={(e) =>
-                            setFormData({ ...formData, npwp: e.target.value })
-                          }
-                          required
-                        />
+                      <div className="flex justify-end gap-2">
+                        <Button type="button" variant="outline" onClick={resetForm}>
+                          Batal
+                        </Button>
+                        <Button type="submit">
+                          {editingCustomer ? "Perbarui" : "Buat"}
+                        </Button>
                       </div>
-                    </div>
-                    <div className="flex justify-end gap-2">
-                      <Button type="button" variant="outline" onClick={resetForm}>
-                        Batal
-                      </Button>
-                      <Button type="submit">
-                        {editingCustomer ? "Perbarui" : "Buat"}
-                      </Button>
-                    </div>
-                  </form>
-                </DialogContent>
-              </Dialog>
+                    </form>
+                  </DialogContent>
+                </Dialog>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap justify-between items-center gap-4 pt-2 border-t">
+              <div className="flex items-center gap-4">
+                <div className="text-sm font-medium text-muted-foreground bg-muted/50 px-3 py-1 rounded-md">
+                  Total Data: <span className="text-foreground">{filteredCustomers.length}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground whitespace-nowrap">Baris per halaman:</span>
+                  <Select
+                    value={itemsPerPage.toString()}
+                    onValueChange={(v) => {
+                      setItemsPerPage(Number(v));
+                      setCurrentPage(1);
+                    }}
+                  >
+                    <SelectTrigger className="w-[70px]">
+                      <SelectValue placeholder="10" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="5">5</SelectItem>
+                      <SelectItem value="10">10</SelectItem>
+                      <SelectItem value="20">20</SelectItem>
+                      <SelectItem value="50">50</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -424,9 +433,9 @@ export default function Customers() {
           </div>
 
           {paginatedCustomers.length > 0 && (
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between p-4 border rounded-lg bg-card text-card-foreground shadow-sm">
               <div className="text-sm text-muted-foreground">
-                Showing {startIndex + 1} to {Math.min(startIndex + itemsPerPage, filteredCustomers.length)} of {filteredCustomers.length} entries
+                Menampilkan {startIndex + 1} sampai {Math.min(startIndex + itemsPerPage, filteredCustomers.length)} dari {filteredCustomers.length} entri
               </div>
               <div className="flex items-center gap-2">
                 <Button
@@ -438,7 +447,7 @@ export default function Customers() {
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
                 <div className="text-sm font-medium">
-                  Page {currentPage} of {totalPages}
+                  Hal {currentPage} dari {totalPages}
                 </div>
                 <Button
                   variant="outline"

@@ -23,9 +23,15 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Checkbox } from "@/components/ui/checkbox";
 import { CompletedStamp } from "@/components/ui/CompletedStamp";
 
-import { Truck, ChevronLeft, ChevronRight, Search } from "lucide-react";
+import { Truck, ChevronLeft, ChevronRight, Search, ChevronsUpDown, Check as CheckIcon } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { startOfDay, endOfDay, isWithinInterval } from "date-fns";
+import { DateRange } from "react-day-picker";
+import { DatePickerWithRange } from "@/components/ui/date-picker-with-range";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
 
 // --- Types ---
 // --- Updated Interface ---
@@ -51,7 +57,7 @@ interface InternalLetter {
                 title: string;
                 letter_number: string;
                 created_at: string;
-                customer: { company_name: string };
+                customer: { id: string; company_name: string };
                 customer_pic: { name: string };
                 customer_attachments: any[];
             };
@@ -65,6 +71,7 @@ interface InternalLetter {
     };
     creator?: { name: string; user_id?: string };
     created_by?: string;
+    created_at?: string;
 }
 
 const InternalLetters = () => {
@@ -80,6 +87,12 @@ const InternalLetters = () => {
     const [searchQuery, setSearchQuery] = useState("");
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(10);
+
+    // Filters
+    const [dateRange, setDateRange] = useState<DateRange | undefined>();
+    const [customers, setCustomers] = useState<any[]>([]);
+    const [selectedCustomerFilter, setSelectedCustomerFilter] = useState<string>("all");
+    const [openCustomerCombobox, setOpenCustomerCombobox] = useState(false);
 
 
     // Detail Modal State
@@ -358,7 +371,7 @@ const InternalLetters = () => {
                              title,
                              letter_number,
                              created_at,
-                             customer:customers (company_name, customer_code),
+                             customer:customers (id, company_name, customer_code),
                              customer_pic:customer_pics (name),
                              customer_attachments:request_attachments(file_name, file_path)
                          ),
@@ -402,9 +415,15 @@ const InternalLetters = () => {
         }
     };
 
+    const fetchCustomers = async () => {
+        const { data } = await supabase.from("customers").select("id, company_name").order("company_name");
+        if (data) setCustomers(data);
+    };
+
     useEffect(() => {
         if (permLoading) return;
         fetchLetters();
+        fetchCustomers();
     }, [userId, userRole, permLoading]);
 
     const handleDelete = async (id: string) => {
@@ -464,19 +483,35 @@ const InternalLetters = () => {
     const filteredLetters = letters.filter((l) => {
         const query = searchQuery.toLowerCase();
         const letterNumber = l.internal_letter_number?.toLowerCase() || "";
-        const customer = l.po_in?.quotation?.request?.customer?.company_name?.toLowerCase() || "";
+        const customerName = l.po_in?.quotation?.request?.customer?.company_name?.toLowerCase() || "";
         const subject = l.po_in?.subject?.toLowerCase() || "";
+        const custId = l.po_in?.quotation?.request?.customer?.id;
 
         const matchesSearch = (
             letterNumber.includes(query) ||
-            customer.includes(query) ||
+            customerName.includes(query) ||
             subject.includes(query)
         );
 
         if (!matchesSearch) return false;
 
-        // Pimpinan Visibility Check: Removed to show all data
-        // Logic changed to only hide interaction checkboxes instead (handled in render)
+        // Date Filter (using created_at of Internal Letter or Request Date?)
+        // Ideally Internal Letter Created At.
+        if (dateRange?.from) {
+            const lDate = l.created_at ? new Date(l.created_at) : null;
+            if (lDate) {
+                if (dateRange.to) {
+                    if (!isWithinInterval(lDate, { start: startOfDay(dateRange.from), end: endOfDay(dateRange.to) })) return false;
+                } else {
+                    if (format(lDate, 'yyyy-MM-dd') !== format(dateRange.from, 'yyyy-MM-dd')) return false;
+                }
+            }
+        }
+
+        // Customer Filter
+        if (selectedCustomerFilter !== "all") {
+            if (custId !== selectedCustomerFilter) return false;
+        }
 
         return true;
     });
@@ -585,17 +620,104 @@ const InternalLetters = () => {
 
 
             {/* Controls */}
-            <div className="flex flex-col sm:flex-row gap-4 justify-between items-center bg-card p-4 rounded-lg border shadow-sm">
-                <div className="relative w-full sm:w-72">
-                    <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input
-                        placeholder="cari data...."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="pl-8"
-                    />
+            <div className="flex flex-col gap-4 bg-card p-4 rounded-lg border shadow-sm">
+                <div className="flex flex-col md:flex-row gap-4 justify-between items-start md:items-center">
+                    <div className="relative w-full md:max-w-xs">
+                        <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                        <Input
+                            placeholder="Cari data..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="pl-8 w-full"
+                        />
+                    </div>
+                    <div className="flex flex-col sm:flex-row gap-6 w-full md:w-auto">
+                        <DatePickerWithRange date={dateRange} setDate={setDateRange} className="w-full sm:w-[240px]" />
+                        <Popover open={openCustomerCombobox} onOpenChange={setOpenCustomerCombobox}>
+                            <PopoverTrigger asChild>
+                                <Button
+                                    variant="outline"
+                                    role="combobox"
+                                    aria-expanded={openCustomerCombobox}
+                                    className="w-full sm:w-[250px] justify-between"
+                                >
+                                    {selectedCustomerFilter && selectedCustomerFilter !== "all"
+                                        ? customers.find((c) => c.id === selectedCustomerFilter)?.company_name
+                                        : "Semua Customer"}
+                                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-[250px] p-0">
+                                <Command>
+                                    <CommandInput placeholder="Cari customer..." />
+                                    <CommandList>
+                                        <CommandEmpty>No customer found.</CommandEmpty>
+                                        <CommandGroup>
+                                            <CommandItem
+                                                value="Semua Customer"
+                                                onSelect={() => {
+                                                    setSelectedCustomerFilter("all");
+                                                    setOpenCustomerCombobox(false);
+                                                }}
+                                            >
+                                                <CheckIcon
+                                                    className={cn(
+                                                        "mr-2 h-4 w-4",
+                                                        selectedCustomerFilter === "all" ? "opacity-100" : "opacity-0"
+                                                    )}
+                                                />
+                                                Semua Customer
+                                            </CommandItem>
+                                            {customers.map((c) => (
+                                                <CommandItem
+                                                    key={c.id}
+                                                    value={c.company_name}
+                                                    onSelect={() => {
+                                                        setSelectedCustomerFilter(c.id);
+                                                        setOpenCustomerCombobox(false);
+                                                    }}
+                                                >
+                                                    <CheckIcon
+                                                        className={cn(
+                                                            "mr-2 h-4 w-4",
+                                                            selectedCustomerFilter === c.id ? "opacity-100" : "opacity-0"
+                                                        )}
+                                                    />
+                                                    {c.company_name}
+                                                </CommandItem>
+                                            ))}
+                                        </CommandGroup>
+                                    </CommandList>
+                                </Command>
+                            </PopoverContent>
+                        </Popover>
+                    </div>
                 </div>
-                <div className="flex items-center gap-4">
+
+                <div className="flex flex-wrap justify-between items-center gap-4 pt-2 border-t">
+                    <div className="flex items-center gap-4">
+                        <div className="text-sm font-medium text-muted-foreground bg-muted/50 px-3 py-1 rounded-md">
+                            Total Data: <span className="text-foreground">{filteredLetters.length}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <span className="text-sm text-muted-foreground whitespace-nowrap">Baris per halaman:</span>
+                            <Select
+                                value={itemsPerPage.toString()}
+                                onValueChange={(v) => setItemsPerPage(Number(v))}
+                            >
+                                <SelectTrigger className="w-[70px]">
+                                    <SelectValue placeholder="10" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="5">5</SelectItem>
+                                    <SelectItem value="10">10</SelectItem>
+                                    <SelectItem value="20">20</SelectItem>
+                                    <SelectItem value="50">50</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                    </div>
+
                     {selectedTrackingId && canManage && (
                         <Button
                             onClick={handleAddToTracking}
@@ -605,23 +727,6 @@ const InternalLetters = () => {
                             Update Tracking
                         </Button>
                     )}
-                    <div className="flex items-center gap-2">
-                        <span className="text-sm text-muted-foreground">Baris per halaman:</span>
-                        <Select
-                            value={itemsPerPage.toString()}
-                            onValueChange={(v) => setItemsPerPage(Number(v))}
-                        >
-                            <SelectTrigger className="w-[70px]">
-                                <SelectValue placeholder="10" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="5">5</SelectItem>
-                                <SelectItem value="10">10</SelectItem>
-                                <SelectItem value="20">20</SelectItem>
-                                <SelectItem value="50">50</SelectItem>
-                            </SelectContent>
-                        </Select>
-                    </div>
                 </div>
             </div>
 
@@ -695,7 +800,7 @@ const InternalLetters = () => {
                                     // if (isFirst) globalIndex++; // Removed
 
                                     return (
-                                        <TableRow key={l.id} className={l.status === 'approved' ? "bg-green-50/30" : ""}>
+                                        <TableRow key={l.id}>
                                             {isFirst && (
                                                 <>
                                                     <TableCell rowSpan={group.length} className="align-middle border-r whitespace-nowrap">

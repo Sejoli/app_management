@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Upload } from "lucide-react";
+import { Upload, X, Paperclip } from "lucide-react";
 
 interface ItemEditDialogProps {
   open: boolean;
@@ -28,6 +28,7 @@ interface ItemEditDialogProps {
     document_path?: string;
     offering_letter_number?: string;
     offering_date?: string;
+    balance_entry_id: number;
   } | null;
   balanceId: string;
   shippingVendorGroups: Array<{ id: string; group_name: string; cost: number }>;
@@ -252,8 +253,16 @@ export default function ItemEditDialog({
   const handleDocumentUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files) {
-      setDocuments(Array.from(files));
+      setDocuments(prev => [...prev, ...Array.from(files)]);
     }
+  };
+
+  const removeNewDocument = (index: number) => {
+    setDocuments(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const removeExistingDocument = (index: number) => {
+    setExistingDocuments(prev => prev.filter((_, i) => i !== index));
   };
 
   const handleSubmit = async () => {
@@ -411,6 +420,8 @@ export default function ItemEditDialog({
                   value={offeringLetterNumber}
                   onChange={(e) => setOfferingLetterNumber(e.target.value)}
                   placeholder="Contoh: INV/2025/001"
+                  disabled
+                  className="bg-muted text-muted-foreground"
                 />
               </div>
               <div>
@@ -419,6 +430,8 @@ export default function ItemEditDialog({
                   type="date"
                   value={offeringDate}
                   onChange={(e) => setOfferingDate(e.target.value)}
+                  disabled
+                  className="bg-muted text-muted-foreground"
                 />
               </div>
             </div>
@@ -427,36 +440,52 @@ export default function ItemEditDialog({
 
             <div>
               <Label>Upload Dokumen Pendukung</Label>
-              {existingDocuments.length > 0 && (
-                <div className="text-sm text-muted-foreground mb-2">
-                  <span className="font-medium">Dokumen existing:</span>
-                  {existingDocuments.map((doc, idx) => (
-                    <div key={idx}>{doc}</div>
-                  ))}
-                </div>
-              )}
-              <div className="space-y-2">
-                <Input
-                  type="file"
-                  multiple
-                  onChange={handleDocumentUpload}
-                  className="hidden"
-                  id="edit-document-upload"
-                />
-                <label
-                  htmlFor="edit-document-upload"
-                  className="flex items-center gap-2 cursor-pointer border rounded-md px-4 py-2 hover:bg-accent"
-                >
-                  <Upload className="h-4 w-4" />
-                  {documents.length > 0 ? `${documents.length} file(s) selected` : "Pilih file tambahan..."}
-                </label>
-                {documents.length > 0 && (
-                  <div className="text-sm text-muted-foreground">
+              <div className="border-2 border-dashed border-gray-200 rounded-lg p-4 mt-2">
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="file"
+                      multiple
+                      onChange={handleDocumentUpload}
+                      className="hidden"
+                      id="edit-document-upload"
+                    />
+                    <label
+                      htmlFor="edit-document-upload"
+                      className="cursor-pointer inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2"
+                    >
+                      Choose Files
+                    </label>
+                    <span className="text-sm text-muted-foreground italic">
+                      {documents.length === 0 ? "No file chosen" : `${documents.length} files selected`}
+                    </span>
+                  </div>
+
+                  <div className="space-y-2">
+                    {existingDocuments.map((doc, idx) => (
+                      <div key={`existing-${idx}`} className="flex items-center justify-between p-2 bg-blue-50 text-blue-700 rounded-md border border-blue-100">
+                        <div className="flex items-center gap-2 text-sm overflow-hidden">
+                          <Paperclip className="h-4 w-4 shrink-0" />
+                          <span className="truncate">{doc.split('_').pop()}</span>
+                        </div>
+                        <button onClick={() => removeExistingDocument(idx)} className="text-blue-700 hover:text-blue-900 shrink-0">
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ))}
                     {documents.map((doc, idx) => (
-                      <div key={idx}>{doc.name}</div>
+                      <div key={`new-${idx}`} className="flex items-center justify-between p-2 bg-blue-50 text-blue-700 rounded-md border border-blue-100">
+                        <div className="flex items-center gap-2 text-sm overflow-hidden">
+                          <Paperclip className="h-4 w-4 shrink-0" />
+                          <span className="truncate">{doc.name} (New)</span>
+                        </div>
+                        <button onClick={() => removeNewDocument(idx)} className="text-blue-700 hover:text-blue-900 shrink-0">
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
                     ))}
                   </div>
-                )}
+                </div>
               </div>
             </div>
 

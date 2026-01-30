@@ -255,181 +255,190 @@ export default function Vendors() {
         </TabsList>
 
         <TabsContent value="vendors" className="space-y-6">
-          <div className="flex flex-col sm:flex-row gap-4 justify-between items-center bg-card p-4 rounded-lg border shadow-sm">
-            <div className="relative w-full sm:w-72">
-              <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="cari data...."
-                value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  setCurrentPage(1);
-                }}
-                className="pl-8"
-              />
-            </div>
-
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">Rows per page:</span>
-                <Select
-                  value={itemsPerPage.toString()}
-                  onValueChange={(v) => {
-                    setItemsPerPage(Number(v));
+          <div className="flex flex-col gap-4 bg-card p-4 rounded-lg border shadow-sm">
+            <div className="flex flex-col md:flex-row gap-4 justify-between items-start md:items-center">
+              <div className="relative w-full md:max-w-xs">
+                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Cari data..."
+                  value={searchQuery}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
                     setCurrentPage(1);
                   }}
-                >
-                  <SelectTrigger className="w-[70px]">
-                    <SelectValue placeholder="10" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="5">5</SelectItem>
-                    <SelectItem value="10">10</SelectItem>
-                    <SelectItem value="20">20</SelectItem>
-                    <SelectItem value="50">50</SelectItem>
-                  </SelectContent>
-                </Select>
+                  className="pl-8 w-full"
+                />
               </div>
 
-              <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button onClick={() => resetForm()} className="gap-2">
-                    <Plus className="h-4 w-4" />
-                    Tambah Vendor
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="max-w-2xl">
-                  <DialogHeader>
-                    <DialogTitle>
-                      {editingVendor ? "Edit Vendor" : "Tambah Vendor Baru"}
-                    </DialogTitle>
-                    <DialogDescription className="sr-only">
-                      Form to add or edit vendor details
-                    </DialogDescription>
-                  </DialogHeader>
-                  <form onSubmit={handleSubmit} className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="company_name">Nama Perusahaan *</Label>
-                      <Input
-                        id="company_name"
-                        value={formData.company_name}
-                        onChange={(e) =>
-                          setFormData({ ...formData, company_name: e.target.value })
-                        }
-                        required
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="office_address">Alamat Kantor *</Label>
-                      <Textarea
-                        id="office_address"
-                        value={formData.office_address}
-                        onChange={(e) =>
-                          setFormData({ ...formData, office_address: e.target.value })
-                        }
-                        required
-                      />
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
+              <div className="flex items-center gap-2 w-full md:w-auto">
+                <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+                  <DialogTrigger asChild>
+                    <Button onClick={() => resetForm()} className="gap-2 w-full md:w-auto">
+                      <Plus className="h-4 w-4" />
+                      Tambah Vendor
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-2xl">
+                    <DialogHeader>
+                      <DialogTitle>
+                        {editingVendor ? "Edit Vendor" : "Tambah Vendor Baru"}
+                      </DialogTitle>
+                      <DialogDescription className="sr-only">
+                        Form to add or edit vendor details
+                      </DialogDescription>
+                    </DialogHeader>
+                    <form onSubmit={handleSubmit} className="space-y-4">
                       <div className="space-y-2">
-                        <Label htmlFor="email">Email *</Label>
+                        <Label htmlFor="company_name">Nama Perusahaan *</Label>
                         <Input
-                          id="email"
-                          type="email"
-                          value={formData.email}
+                          id="company_name"
+                          value={formData.company_name}
                           onChange={(e) =>
-                            setFormData({ ...formData, email: e.target.value })
+                            setFormData({ ...formData, company_name: e.target.value })
                           }
                           required
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="npwp">Nomor NPWP *</Label>
-                        <Input
-                          id="npwp"
-                          value={formData.npwp}
+                        <Label htmlFor="office_address">Alamat Kantor *</Label>
+                        <Textarea
+                          id="office_address"
+                          value={formData.office_address}
                           onChange={(e) =>
-                            setFormData({ ...formData, npwp: e.target.value })
+                            setFormData({ ...formData, office_address: e.target.value })
                           }
                           required
                         />
                       </div>
-                    </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="email">Email *</Label>
+                          <Input
+                            id="email"
+                            type="email"
+                            value={formData.email}
+                            onChange={(e) =>
+                              setFormData({ ...formData, email: e.target.value })
+                            }
+                            required
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="npwp">Nomor NPWP *</Label>
+                          <Input
+                            id="npwp"
+                            value={formData.npwp}
+                            onChange={(e) =>
+                              setFormData({ ...formData, npwp: e.target.value })
+                            }
+                            required
+                          />
+                        </div>
+                      </div>
 
-                    <div className="space-y-2">
-                      <Label htmlFor="npwp_file">Upload NPWP (PDF/Gambar)</Label>
-                      <div className="flex gap-2 items-center">
-                        <Input
-                          id="npwp_file"
-                          type="file"
-                          accept=".pdf,.jpg,.jpeg,.png"
-                          onChange={handleFileUpload}
-                          disabled={uploading}
-                        />
-                        {formData.npwp_url && (
-                          <a
-                            href={formData.npwp_url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-xs text-blue-600 hover:underline shrink-0"
-                          >
-                            Lihat Saat Ini
-                          </a>
-                        )}
+                      <div className="space-y-2">
+                        <Label htmlFor="npwp_file">Upload NPWP (PDF/Gambar)</Label>
+                        <div className="flex gap-2 items-center">
+                          <Input
+                            id="npwp_file"
+                            type="file"
+                            accept=".pdf,.jpg,.jpeg,.png"
+                            onChange={handleFileUpload}
+                            disabled={uploading}
+                          />
+                          {formData.npwp_url && (
+                            <a
+                              href={formData.npwp_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-xs text-blue-600 hover:underline shrink-0"
+                            >
+                              Lihat Saat Ini
+                            </a>
+                          )}
+                        </div>
                       </div>
-                    </div>
 
-                    <div className="space-y-2">
-                      <Label htmlFor="products">Produk / Layanan</Label>
-                      <Textarea
-                        id="products"
-                        value={formData.products}
-                        onChange={(e) =>
-                          setFormData({ ...formData, products: e.target.value })
-                        }
-                        placeholder="Tuliskan produk atau layanan yang disediakan..."
-                      />
-                    </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="products">Produk / Layanan</Label>
+                        <Textarea
+                          id="products"
+                          value={formData.products}
+                          onChange={(e) =>
+                            setFormData({ ...formData, products: e.target.value })
+                          }
+                          placeholder="Tuliskan produk atau layanan yang disediakan..."
+                        />
+                      </div>
 
-                    <div className="grid grid-cols-3 gap-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="bank_name">Nama Bank</Label>
-                        <Input
-                          id="bank_name"
-                          value={formData.bank_name}
-                          onChange={(e) => setFormData({ ...formData, bank_name: e.target.value })}
-                          placeholder="e.g. BCA"
-                        />
+                      <div className="grid grid-cols-3 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="bank_name">Nama Bank</Label>
+                          <Input
+                            id="bank_name"
+                            value={formData.bank_name}
+                            onChange={(e) => setFormData({ ...formData, bank_name: e.target.value })}
+                            placeholder="e.g. BCA"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="bank_account_number">Nomor Rekening</Label>
+                          <Input
+                            id="bank_account_number"
+                            value={formData.bank_account_number}
+                            onChange={(e) => setFormData({ ...formData, bank_account_number: e.target.value })}
+                            type="number"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="bank_account_holder">Pemilik Rekening</Label>
+                          <Input
+                            id="bank_account_holder"
+                            value={formData.bank_account_holder}
+                            onChange={(e) => setFormData({ ...formData, bank_account_holder: e.target.value })}
+                          />
+                        </div>
                       </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="bank_account_number">Nomor Rekening</Label>
-                        <Input
-                          id="bank_account_number"
-                          value={formData.bank_account_number}
-                          onChange={(e) => setFormData({ ...formData, bank_account_number: e.target.value })}
-                          type="number"
-                        />
+                      <div className="flex justify-end gap-2">
+                        <Button type="button" variant="outline" onClick={resetForm}>
+                          Batal
+                        </Button>
+                        <Button type="submit">
+                          {editingVendor ? "Perbarui" : "Buat"}
+                        </Button>
                       </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="bank_account_holder">Pemilik Rekening</Label>
-                        <Input
-                          id="bank_account_holder"
-                          value={formData.bank_account_holder}
-                          onChange={(e) => setFormData({ ...formData, bank_account_holder: e.target.value })}
-                        />
-                      </div>
-                    </div>
-                    <div className="flex justify-end gap-2">
-                      <Button type="button" variant="outline" onClick={resetForm}>
-                        Batal
-                      </Button>
-                      <Button type="submit">
-                        {editingVendor ? "Perbarui" : "Buat"}
-                      </Button>
-                    </div>
-                  </form>
-                </DialogContent>
-              </Dialog>
+                    </form>
+                  </DialogContent>
+                </Dialog>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap justify-between items-center gap-4 pt-2 border-t">
+              <div className="flex items-center gap-4">
+                <div className="text-sm font-medium text-muted-foreground bg-muted/50 px-3 py-1 rounded-md">
+                  Total Data: <span className="text-foreground">{filteredVendors.length}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground whitespace-nowrap">Baris per halaman:</span>
+                  <Select
+                    value={itemsPerPage.toString()}
+                    onValueChange={(v) => {
+                      setItemsPerPage(Number(v));
+                      setCurrentPage(1);
+                    }}
+                  >
+                    <SelectTrigger className="w-[70px]">
+                      <SelectValue placeholder="10" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="5">5</SelectItem>
+                      <SelectItem value="10">10</SelectItem>
+                      <SelectItem value="20">20</SelectItem>
+                      <SelectItem value="50">50</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -544,9 +553,9 @@ export default function Vendors() {
           </div>
 
           {paginatedVendors.length > 0 && (
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between p-4 border rounded-lg bg-card text-card-foreground shadow-sm">
               <div className="text-sm text-muted-foreground">
-                Showing {startIndex + 1} to {Math.min(startIndex + itemsPerPage, filteredVendors.length)} of {filteredVendors.length} entries
+                Menampilkan {startIndex + 1} sampai {Math.min(startIndex + itemsPerPage, filteredVendors.length)} dari {filteredVendors.length} entri
               </div>
               <div className="flex items-center gap-2">
                 <Button
@@ -558,7 +567,7 @@ export default function Vendors() {
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
                 <div className="text-sm font-medium">
-                  Page {currentPage} of {totalPages}
+                  Hal {currentPage} dari {totalPages}
                 </div>
                 <Button
                   variant="outline"

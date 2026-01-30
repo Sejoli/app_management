@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { DeleteConfirmationDialog } from "@/components/DeleteConfirmationDialog";
 import { toast } from "sonner";
 import { Plus, Search, Pencil, Trash2, AlertCircle, X, Link as LinkIcon, ChevronLeft, ChevronRight } from "lucide-react";
-import { format, isPast, parseISO, isValid } from "date-fns";
+
 import { id } from "date-fns/locale";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
@@ -23,7 +23,12 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select"; // Added imports
+} from "@/components/ui/select";
+import { format, isPast, parseISO, isValid, startOfDay, endOfDay, isWithinInterval } from "date-fns";
+import { DateRange } from "react-day-picker";
+import { DatePickerWithRange } from "@/components/ui/date-picker-with-range";
+import { ChevronsUpDown, Check } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 type Request = {
   id: string;
@@ -34,7 +39,7 @@ type Request = {
   customer_id: string;
   customer_pic_id: string;
   submission_deadline: string;
-  customers?: { company_name: string; customer_code: string };
+  customers?: { id: string; company_name: string; customer_code: string };
   customer_pics?: { name: string };
   quotations?: {
     quotation_number: string;
@@ -291,6 +296,9 @@ const Requests = () => {
   const { canManage, userId, userRole } = usePermission("requests");
   const [filteredRequests, setFilteredRequests] = useState<Request[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
+  const [dateRange, setDateRange] = useState<DateRange | undefined>();
+  const [selectedCustomerFilter, setSelectedCustomerFilter] = useState<string>("all");
+  const [openCombobox, setOpenCombobox] = useState(false);
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(5); // Default to 5
@@ -320,7 +328,7 @@ const Requests = () => {
   }, []);
 
   useEffect(() => {
-    const filtered = requests.filter(
+    let filtered = requests.filter(
       (req) =>
         req.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         req.letter_number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -328,9 +336,27 @@ const Requests = () => {
         req.customer_pics?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         req.request_code?.toLowerCase().includes(searchTerm.toLowerCase())
     );
+
+    // Date Filter
+    if (dateRange?.from) {
+      filtered = filtered.filter(req => {
+        const rDate = new Date(req.request_date);
+        if (dateRange.to) {
+          return isWithinInterval(rDate, { start: startOfDay(dateRange.from), end: endOfDay(dateRange.to) });
+        } else {
+          return format(rDate, 'yyyy-MM-dd') === format(dateRange.from, 'yyyy-MM-dd');
+        }
+      });
+    }
+
+    // Customer Filter
+    if (selectedCustomerFilter !== "all") {
+      filtered = filtered.filter(req => req.customers?.id === selectedCustomerFilter);
+    }
+
     setFilteredRequests(filtered);
     setCurrentPage(1);
-  }, [searchTerm, requests]);
+  }, [searchTerm, requests, dateRange, selectedCustomerFilter]);
 
   const fetchRequests = async () => {
     setIsLoading(true);
@@ -339,7 +365,7 @@ const Requests = () => {
       .from("requests")
       .select(`
         *,
-        customers (company_name, customer_code),
+        customers (id, company_name, customer_code),
         customer_pics (name),
         quotations (
           quotation_number,
@@ -676,40 +702,112 @@ const Requests = () => {
     <div className="p-6 space-y-6">
       <div className="flex justify-between items-center">
       </div>
-      <div className="flex flex-col sm:flex-row gap-4 justify-between items-center bg-card p-4 rounded-lg border shadow-sm mt-6">
-        <div className="flex items-center gap-2 flex-1 max-w-sm">
-          <Search className="h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="cari data...."
-            value={searchTerm}
-            onChange={(e) => {
-              setSearchTerm(e.target.value);
-              setCurrentPage(1);
-            }}
-            className="w-full"
-          />
-        </div>
-
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">Rows per page:</span>
-            <Select
-              value={itemsPerPage.toString()}
-              onValueChange={(v) => {
-                setItemsPerPage(Number(v));
+      <div className="flex flex-col gap-4 bg-card p-4 rounded-lg border shadow-sm mt-6">
+        <div className="flex flex-col md:flex-row gap-4 justify-between items-start md:items-center">
+          {/* Search Bar */}
+          <div className="relative w-full md:max-w-xs">
+            <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Cari data..."
+              value={searchTerm}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
                 setCurrentPage(1);
               }}
-            >
-              <SelectTrigger className="w-[70px]">
-                <SelectValue placeholder="5" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="5">5</SelectItem>
-                <SelectItem value="10">10</SelectItem>
-                <SelectItem value="20">20</SelectItem>
-                <SelectItem value="50">50</SelectItem>
-              </SelectContent>
-            </Select>
+              className="pl-8 w-full"
+            />
+          </div>
+
+          {/* Filters Group */}
+          <div className="flex flex-col sm:flex-row gap-6 w-full md:w-auto">
+            <DatePickerWithRange date={dateRange} setDate={setDateRange} className="w-full sm:w-[240px]" />
+
+            <Popover open={openCombobox} onOpenChange={setOpenCombobox}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  role="combobox"
+                  aria-expanded={openCombobox}
+                  className="w-full sm:w-[250px] justify-between"
+                >
+                  {selectedCustomerFilter && selectedCustomerFilter !== "all"
+                    ? customers.find((c) => c.id === selectedCustomerFilter)?.company_name
+                    : "Semua Customer"}
+                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[250px] p-0">
+                <Command>
+                  <CommandInput placeholder="Cari customer..." />
+                  <CommandList>
+                    <CommandEmpty>No customer found.</CommandEmpty>
+                    <CommandGroup>
+                      <CommandItem
+                        value="Semua Customer"
+                        onSelect={() => {
+                          setSelectedCustomerFilter("all");
+                          setOpenCombobox(false);
+                        }}
+                      >
+                        <Check
+                          className={cn(
+                            "mr-2 h-4 w-4",
+                            selectedCustomerFilter === "all" ? "opacity-100" : "opacity-0"
+                          )}
+                        />
+                        Semua Customer
+                      </CommandItem>
+                      {customers.map((c) => (
+                        <CommandItem
+                          key={c.id}
+                          value={c.company_name}
+                          onSelect={() => {
+                            setSelectedCustomerFilter(c.id);
+                            setOpenCombobox(false);
+                          }}
+                        >
+                          <Check
+                            className={cn(
+                              "mr-2 h-4 w-4",
+                              selectedCustomerFilter === c.id ? "opacity-100" : "opacity-0"
+                            )}
+                          />
+                          {c.company_name}
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap justify-between items-center gap-4 pt-2 border-t">
+          <div className="flex items-center gap-4">
+            <div className="text-sm font-medium text-muted-foreground bg-muted/50 px-3 py-1 rounded-md">
+              Total Data: <span className="text-foreground">{filteredRequests.length}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground whitespace-nowrap">Rows per page:</span>
+              <Select
+                value={itemsPerPage.toString()}
+                onValueChange={(v) => {
+                  setItemsPerPage(Number(v));
+                  setCurrentPage(1);
+                }}
+              >
+                <SelectTrigger className="w-[70px]">
+                  <SelectValue placeholder="5" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="5">5</SelectItem>
+                  <SelectItem value="10">10</SelectItem>
+                  <SelectItem value="20">20</SelectItem>
+                  <SelectItem value="50">50</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           <Dialog open={isOpen} onOpenChange={(open) => {
@@ -924,8 +1022,9 @@ const Requests = () => {
         </div>
       </div>
 
+
       {
-        isDeadlinePassed && filteredRequests.some(r => {
+        filteredRequests.some(r => {
           const hasQuotations = r.quotations && r.quotations.length > 0;
           return !hasQuotations && isDeadlinePassed(r.submission_deadline);
         }) && (
@@ -938,7 +1037,7 @@ const Requests = () => {
         )
       }
 
-      <Card>
+      < Card >
         <CardContent className="p-0">
           <Table>
             <TableHeader>
@@ -1004,38 +1103,40 @@ const Requests = () => {
             </TableBody>
           </Table>
         </CardContent>
-      </Card>
+      </Card >
 
 
 
-      {paginatedData.length > 0 && (
-        <div className="flex items-center justify-between">
-          <div className="text-sm text-muted-foreground">
-            Menampilkan {(currentPage - 1) * itemsPerPage + 1} sampai {Math.min(currentPage * itemsPerPage, filteredRequests.length)} dari {filteredRequests.length} entri
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-              disabled={currentPage === 1}
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <div className="text-sm font-medium">
-              Hal {currentPage} dari {totalPages}
+      {
+        paginatedData.length > 0 && (
+          <div className="flex items-center justify-between">
+            <div className="text-sm text-muted-foreground">
+              Menampilkan {(currentPage - 1) * itemsPerPage + 1} sampai {Math.min(currentPage * itemsPerPage, filteredRequests.length)} dari {filteredRequests.length} entri
             </div>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-              disabled={currentPage === totalPages}
-            >
-              <ChevronRight className="h-4 w-4" />
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <div className="text-sm font-medium">
+                Hal {currentPage} dari {totalPages}
+              </div>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
-        </div>
-      )}
+        )
+      }
     </div >
   );
 };

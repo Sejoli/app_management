@@ -38,12 +38,28 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Edit, Printer, Mail, PhoneCall, Link as LinkIcon, Trash2, ShoppingBag, Search, ChevronLeft, ChevronRight, Plus, FileDown, Loader2, CalendarClock, MoreHorizontal } from "lucide-react";
+import { Edit, Printer, Mail, PhoneCall, Link as LinkIcon, Trash2, ShoppingBag, Search, ChevronLeft, ChevronRight, Plus, FileDown, Loader2, CalendarClock, MoreHorizontal, Check, ChevronsUpDown } from "lucide-react";
 import { toast } from "sonner";
-import { format, isValid, differenceInWeeks, differenceInDays } from "date-fns";
+import { format, isValid, differenceInWeeks, differenceInDays, startOfDay, endOfDay, isWithinInterval } from "date-fns";
+import { DateRange } from "react-day-picker";
+import { DatePickerWithRange } from "@/components/ui/date-picker-with-range";
 import { id as idLocale } from "date-fns/locale";
 import { usePermission } from "@/hooks/usePermission";
 import { useNavigate, Link } from "react-router-dom";
+import { cn } from "@/lib/utils";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 
 import QuotationEditor from "@/components/quotation/QuotationEditor";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -53,6 +69,7 @@ interface Request {
   request_code: string;
   letter_number: string;
   customer: {
+    id: string;
     customer_code: string;
     company_name: string;
     delivery_address: string;
@@ -108,12 +125,16 @@ interface Quotation {
 
 export default function Quotations() {
   const [quotations, setQuotations] = useState<Quotation[]>([]);
+  const [customers, setCustomers] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
+  const [dateRange, setDateRange] = useState<DateRange | undefined>();
+  const [selectedCustomer, setSelectedCustomer] = useState<string>("all");
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [selectedQuotations, setSelectedQuotations] = useState<Set<string>>(new Set());
   const [selectedQuotation, setSelectedQuotation] = useState<Quotation | null>(null);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
+  const [openCombobox, setOpenCombobox] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const { canManage, userRole, userId } = usePermission("quotations");
   const navigate = useNavigate();
@@ -177,7 +198,16 @@ apakah ada kabar baik ?`;
 
   useEffect(() => {
     fetchQuotations();
+    fetchCustomers();
   }, []);
+
+  const fetchCustomers = async () => {
+    const { data } = await supabase
+      .from("customers")
+      .select("id, company_name")
+      .order("company_name", { ascending: true });
+    if (data) setCustomers(data);
+  };
 
   const fetchQuotations = async () => {
 
@@ -194,7 +224,7 @@ apakah ada kabar baik ?`;
     letter_number,
     title,
     request_date,
-    customer: customers(customer_code, company_name, delivery_address),
+    customer: customers(id, customer_code, company_name, delivery_address),
     customer_pic: customer_pics(name, phone)
   ),
     quotation_balances(
@@ -304,9 +334,10 @@ apakah ada kabar baik ?`;
       };
     });
   }).filter((q: any) => {
-    if (!searchTerm) return true;
     const searchLower = searchTerm.toLowerCase();
-    return (
+
+    // Search Term Filter
+    const matchesSearch = (
       q.request.request_code?.toLowerCase().includes(searchLower) ||
       q.request.letter_number?.toLowerCase().includes(searchLower) ||
       q.request.customer?.company_name?.toLowerCase().includes(searchLower) ||
@@ -315,6 +346,26 @@ apakah ada kabar baik ?`;
       q.request.title?.toLowerCase().includes(searchLower) ||
       q.creator?.name?.toLowerCase().includes(searchLower)
     );
+
+    if (!matchesSearch) return false;
+
+    // Date Filter
+    if (dateRange?.from) {
+      const qDate = new Date(q.created_at);
+      if (dateRange.to) {
+        if (!isWithinInterval(qDate, { start: startOfDay(dateRange.from), end: endOfDay(dateRange.to) })) return false;
+      } else {
+        // Exact date match (day)
+        if (format(qDate, 'yyyy-MM-dd') !== format(dateRange.from, 'yyyy-MM-dd')) return false;
+      }
+    }
+
+    // Customer Filter
+    if (selectedCustomer !== "all") {
+      if (q.request?.customer?.id !== selectedCustomer) return false;
+    }
+
+    return true;
   });
 
   const totalPages = Math.ceil(flattenedQuotations.length / itemsPerPage);
@@ -342,44 +393,117 @@ apakah ada kabar baik ?`;
 
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-4 justify-between items-center bg-card p-4 rounded-lg border shadow-sm mt-6">
-        <div className="flex items-center gap-2 flex-1 max-w-sm">
-          <Search className="h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="cari data...."
-            value={searchTerm}
-            onChange={(e) => {
-              setSearchTerm(e.target.value);
-              setCurrentPage(1);
-            }}
-            className="w-full"
-          />
-        </div>
-
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">Baris per halaman:</span>
-            <Select
-              value={itemsPerPage.toString()}
-              onValueChange={(v) => {
-                setItemsPerPage(Number(v));
+      <div className="flex flex-col gap-4 bg-card p-4 rounded-lg border shadow-sm mt-6">
+        <div className="flex flex-col md:flex-row gap-4 justify-between items-start md:items-center">
+          {/* Search Bar */}
+          <div className="relative w-full md:max-w-xs">
+            <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Cari data..."
+              value={searchTerm}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
                 setCurrentPage(1);
               }}
-            >
-              <SelectTrigger className="w-[70px]">
-                <SelectValue placeholder="10" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="5">5</SelectItem>
-                <SelectItem value="10">10</SelectItem>
-                <SelectItem value="20">20</SelectItem>
-                <SelectItem value="50">50</SelectItem>
-              </SelectContent>
-            </Select>
+              className="pl-8 w-full"
+            />
+          </div>
+
+          {/* Filters Group - Stack on mobile, Row on Desktop */}
+          <div className="flex flex-col sm:flex-row gap-6 w-full md:w-auto">
+            <DatePickerWithRange date={dateRange} setDate={setDateRange} className="w-full sm:w-[240px]" />
+
+            <Popover open={openCombobox} onOpenChange={setOpenCombobox}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  role="combobox"
+                  aria-expanded={openCombobox}
+                  className="w-full sm:w-[250px] justify-between"
+                >
+                  {selectedCustomer && selectedCustomer !== "all"
+                    ? customers.find((c) => c.id === selectedCustomer)?.company_name
+                    : "Semua Customer"}
+                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[250px] p-0">
+                <Command>
+                  <CommandInput placeholder="Cari customer..." />
+                  <CommandList>
+                    <CommandEmpty>No customer found.</CommandEmpty>
+                    <CommandGroup>
+                      <CommandItem
+                        value="Semua Customer"
+                        onSelect={() => {
+                          setSelectedCustomer("all");
+                          setOpenCombobox(false);
+                        }}
+                      >
+                        <Check
+                          className={cn(
+                            "mr-2 h-4 w-4",
+                            selectedCustomer === "all" ? "opacity-100" : "opacity-0"
+                          )}
+                        />
+                        Semua Customer
+                      </CommandItem>
+                      {customers.map((c) => (
+                        <CommandItem
+                          key={c.id}
+                          value={c.company_name}
+                          onSelect={() => {
+                            setSelectedCustomer(c.id);
+                            setOpenCombobox(false);
+                          }}
+                        >
+                          <Check
+                            className={cn(
+                              "mr-2 h-4 w-4",
+                              selectedCustomer === c.id ? "opacity-100" : "opacity-0"
+                            )}
+                          />
+                          {c.company_name}
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
+          </div>
+        </div>
+
+        {/* Action Bar - Pagination & PO Button */}
+        <div className="flex flex-wrap justify-between items-center gap-4 pt-2 border-t">
+          <div className="flex items-center gap-4">
+            <div className="text-sm font-medium text-muted-foreground bg-muted/50 px-3 py-1 rounded-md">
+              Total Data: <span className="text-foreground">{flattenedQuotations.length}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground whitespace-nowrap">Baris per halaman:</span>
+              <Select
+                value={itemsPerPage.toString()}
+                onValueChange={(v) => {
+                  setItemsPerPage(Number(v));
+                  setCurrentPage(1);
+                }}
+              >
+                <SelectTrigger className="w-[70px]">
+                  <SelectValue placeholder="10" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="5">5</SelectItem>
+                  <SelectItem value="10">10</SelectItem>
+                  <SelectItem value="20">20</SelectItem>
+                  <SelectItem value="50">50</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           {selectedQuotations.size > 0 && canManage && (
-            <Button onClick={handleCreatePO} variant="default">
+            <Button onClick={handleCreatePO} variant="default" className="w-full sm:w-auto">
               <ShoppingBag className="h-4 w-4 mr-2" />
               Buat Purchase Order ({selectedQuotations.size})
             </Button>
@@ -387,261 +511,263 @@ apakah ada kabar baik ?`;
         </div>
       </div>
 
-      <div className="border rounded-lg bg-card">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-12 whitespace-nowrap">No</TableHead>
-              <TableHead className="whitespace-nowrap">Info Permintaan</TableHead>
-              <TableHead className="w-12 whitespace-nowrap">
-                {/* Checkbox Header */}
-              </TableHead>
-              <TableHead className="whitespace-nowrap">No Neraca</TableHead>
-              <TableHead className="whitespace-nowrap">No Penawaran</TableHead>
-              {userRole && userRole !== 'staff' && <TableHead className="w-[150px] whitespace-nowrap">Dibuat Oleh</TableHead>}
+      <div className="border rounded-lg bg-card overflow-hidden">
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-12 whitespace-nowrap">No</TableHead>
+                <TableHead className="whitespace-nowrap">Info Permintaan</TableHead>
+                <TableHead className="w-12 whitespace-nowrap">
+                  {/* Checkbox Header */}
+                </TableHead>
+                <TableHead className="whitespace-nowrap">No Neraca</TableHead>
+                <TableHead className="whitespace-nowrap">No Penawaran</TableHead>
+                {userRole && userRole !== 'staff' && <TableHead className="w-[150px] whitespace-nowrap">Dibuat Oleh</TableHead>}
 
-              <TableHead className="w-48 text-right whitespace-nowrap">Aksi</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              Array.from({ length: 5 }).map((_, index) => (
-                <TableRow key={index}>
-                  <TableCell><Skeleton className="h-4 w-4" /></TableCell>
-                  <TableCell>
-                    <div className="space-y-2">
-                      <Skeleton className="h-4 w-40" />
-                      <Skeleton className="h-4 w-32" />
-                      <Skeleton className="h-4 w-28" />
-                    </div>
-                  </TableCell>
-                  <TableCell><Skeleton className="h-4 w-24" /></TableCell>
-                  {userRole && userRole !== 'staff' && <TableCell><Skeleton className="h-4 w-32" /></TableCell>}
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-2">
-                      <Skeleton className="h-8 w-8" />
-                      <Skeleton className="h-8 w-8" />
-                      <Skeleton className="h-8 w-8" />
-                    </div>
+                <TableHead className="w-48 text-right whitespace-nowrap">Aksi</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {isLoading ? (
+                Array.from({ length: 5 }).map((_, index) => (
+                  <TableRow key={index}>
+                    <TableCell><Skeleton className="h-4 w-4" /></TableCell>
+                    <TableCell>
+                      <div className="space-y-2">
+                        <Skeleton className="h-4 w-40" />
+                        <Skeleton className="h-4 w-32" />
+                        <Skeleton className="h-4 w-28" />
+                      </div>
+                    </TableCell>
+                    <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                    {userRole && userRole !== 'staff' && <TableCell><Skeleton className="h-4 w-32" /></TableCell>}
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-2">
+                        <Skeleton className="h-8 w-8" />
+                        <Skeleton className="h-8 w-8" />
+                        <Skeleton className="h-8 w-8" />
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              ) : isError ? (
+                <TableRow>
+                  <TableCell colSpan={userRole !== 'staff' ? 7 : 6} className="text-center text-destructive p-8">
+                    Pastikan koneksi internet anda baik
                   </TableCell>
                 </TableRow>
-              ))
-            ) : isError ? (
-              <TableRow>
-                <TableCell colSpan={userRole !== 'staff' ? 7 : 6} className="text-center text-destructive p-8">
-                  Pastikan koneksi internet anda baik
-                </TableCell>
-              </TableRow>
-            ) : paginatedQuotations.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={userRole !== 'staff' ? 7 : 6} className="text-center text-muted-foreground p-8">
-                  {searchTerm ? "Pencarian tidak ditemukan" : "Belum ada penawaran ditemukan"}
-                </TableCell>
-              </TableRow>
-            ) : (
-              // Group logic
-              Object.values(
-                paginatedQuotations.reduce((acc, q) => {
-                  const reqId = q.request.id;
-                  if (!acc[reqId]) acc[reqId] = [];
-                  acc[reqId].push(q);
-                  return acc;
-                }, {} as Record<string, typeof paginatedQuotations>)
-              ).map((group, groupIndex) => {
-                return group.map((quotation, rowIndex) => {
-                  const isFirst = rowIndex === 0;
-                  return (
-                    <TableRow key={`${quotation.id}-${rowIndex}`} className={quotation.is_closed ? "bg-muted/50" : ""}>
-                      {/* Merged Columns (Render only for first row of group) */}
-                      {isFirst && (
-                        <>
-                          <TableCell rowSpan={group.length} className="align-top bg-white/50 border-r whitespace-nowrap">
-                            {startIndex + groupIndex + 1}
-                          </TableCell>
-                          <TableCell rowSpan={group.length} className="align-top bg-white/50 border-r relative whitespace-nowrap">
-                            <div className="relative z-10">
-                              <span className="font-medium bg-green-100 text-green-800 px-2 py-1 rounded inline-block mb-2">
-                                {quotation.request?.request_code || "-"}
-                              </span>
-                              <div className="flex flex-col gap-1">
-                                <span className="font-bold text-base">{quotation.request?.customer?.company_name || "-"}</span>
-                                <span className="font-medium">{quotation.request?.title || "-"}</span>
-                                <div className="text-sm text-muted-foreground flex flex-col gap-1">
-                                  <div>
-                                    <span className="font-semibold">No Surat:</span> {quotation.request?.letter_number || "-"}
+              ) : paginatedQuotations.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={userRole !== 'staff' ? 7 : 6} className="text-center text-muted-foreground p-8">
+                    {searchTerm ? "Pencarian tidak ditemukan" : "Belum ada penawaran ditemukan"}
+                  </TableCell>
+                </TableRow>
+              ) : (
+                // Group logic
+                Object.values(
+                  paginatedQuotations.reduce((acc, q) => {
+                    const reqId = q.request.id;
+                    if (!acc[reqId]) acc[reqId] = [];
+                    acc[reqId].push(q);
+                    return acc;
+                  }, {} as Record<string, typeof paginatedQuotations>)
+                ).map((group, groupIndex) => {
+                  return group.map((quotation, rowIndex) => {
+                    const isFirst = rowIndex === 0;
+                    return (
+                      <TableRow key={`${quotation.id}-${rowIndex}`} className={quotation.is_closed ? "bg-muted/50" : ""}>
+                        {/* Merged Columns (Render only for first row of group) */}
+                        {isFirst && (
+                          <>
+                            <TableCell rowSpan={group.length} className="align-top bg-white/50 border-r whitespace-nowrap">
+                              {startIndex + groupIndex + 1}
+                            </TableCell>
+                            <TableCell rowSpan={group.length} className="align-top bg-white/50 border-r relative whitespace-nowrap">
+                              <div className="relative z-10">
+                                <span className="font-medium bg-green-100 text-green-800 px-2 py-1 rounded inline-block mb-2">
+                                  {quotation.request?.request_code || "-"}
+                                </span>
+                                <div className="flex flex-col gap-1">
+                                  <span className="font-bold text-base">{quotation.request?.customer?.company_name || "-"}</span>
+                                  <span className="font-medium">{quotation.request?.title || "-"}</span>
+                                  <div className="text-sm text-muted-foreground flex flex-col gap-1">
+                                    <div>
+                                      <span className="font-semibold">No Surat:</span> {quotation.request?.letter_number || "-"}
+                                    </div>
+                                    <div>
+                                      <span className="font-semibold">PIC:</span> {quotation.request?.customer_pic?.name || "-"}
+                                    </div>
+                                    <div>
+                                      <span className="font-semibold">Tanggal:</span> {quotation.created_at && isValid(new Date(quotation.created_at)) ? format(new Date(quotation.created_at), "dd/MM/yyyy", { locale: idLocale }) : "-"}
+                                    </div>
                                   </div>
-                                  <div>
-                                    <span className="font-semibold">PIC:</span> {quotation.request?.customer_pic?.name || "-"}
-                                  </div>
-                                  <div>
-                                    <span className="font-semibold">Tanggal:</span> {quotation.created_at && isValid(new Date(quotation.created_at)) ? format(new Date(quotation.created_at), "dd/MM/yyyy", { locale: idLocale }) : "-"}
-                                  </div>
+                                  {quotation.attachments.length > 0 && (
+                                    <div className="flex flex-wrap gap-2 mt-1">
+                                      {quotation.attachments.map((attachment, idx) => (
+                                        <a
+                                          key={idx}
+                                          href={getStorageUrl(attachment.file_path)}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="flex items-center gap-1 text-blue-600 hover:underline text-xs"
+                                        >
+                                          <LinkIcon className="h-3 w-3" />
+                                          data {idx + 1}
+                                        </a>
+                                      ))}
+                                    </div>
+                                  )}
                                 </div>
-                                {quotation.attachments.length > 0 && (
-                                  <div className="flex flex-wrap gap-2 mt-1">
-                                    {quotation.attachments.map((attachment, idx) => (
-                                      <a
-                                        key={idx}
-                                        href={getStorageUrl(attachment.file_path)}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="flex items-center gap-1 text-blue-600 hover:underline text-xs"
-                                      >
-                                        <LinkIcon className="h-3 w-3" />
-                                        data {idx + 1}
-                                      </a>
-                                    ))}
-                                  </div>
-                                )}
+                              </div>
+                            </TableCell>
+                          </>
+                        )}
+
+                        {/* Individual Columns */}
+                        <TableCell className="whitespace-nowrap">
+                          {!quotation.is_closed && (
+                            <Checkbox
+                              checked={selectedQuotations.has((quotation as any).compositeId) || (quotation.purchase_order_quotations && quotation.purchase_order_quotations.length > 0)}
+                              disabled={!canManage || (quotation.purchase_order_quotations && quotation.purchase_order_quotations.length > 0)}
+                              onCheckedChange={(checked) => {
+                                const compId = (quotation as any).compositeId;
+                                if (checked) {
+                                  // Single select: Replace entire set with just this one
+                                  setSelectedQuotations(new Set([compId]));
+                                } else {
+                                  setSelectedQuotations(new Set());
+                                }
+                              }}
+                            />
+                          )}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap">
+                          <Link to="/balances" className={`block w-fit ${quotation.is_closed ? "line-through opacity-50" : ""}`}>
+                            <div className="flex flex-col gap-1">
+                              <div className="text-sm font-mono bg-amber-50 text-amber-900 border border-amber-200 px-1 rounded w-fit hover:bg-amber-100 transition-colors">
+                                {(quotation as any).display_balance_code}
+                              </div>
+                              <div className="text-xs text-muted-foreground">
+                                {(quotation as any).balance_date && isValid(new Date((quotation as any).balance_date)) ? format(new Date((quotation as any).balance_date), "dd/MM/yyyy", { locale: idLocale }) : "-"}
                               </div>
                             </div>
-                          </TableCell>
-                        </>
-                      )}
-
-                      {/* Individual Columns */}
-                      <TableCell className="whitespace-nowrap">
-                        {!quotation.is_closed && (
-                          <Checkbox
-                            checked={selectedQuotations.has((quotation as any).compositeId) || (quotation.purchase_order_quotations && quotation.purchase_order_quotations.length > 0)}
-                            disabled={!canManage || (quotation.purchase_order_quotations && quotation.purchase_order_quotations.length > 0)}
-                            onCheckedChange={(checked) => {
-                              const compId = (quotation as any).compositeId;
-                              if (checked) {
-                                // Single select: Replace entire set with just this one
-                                setSelectedQuotations(new Set([compId]));
-                              } else {
-                                setSelectedQuotations(new Set());
-                              }
-                            }}
-                          />
-                        )}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap">
-                        <Link to="/balances" className={`block w-fit ${quotation.is_closed ? "line-through opacity-50" : ""}`}>
-                          <div className="flex flex-col gap-1">
-                            <div className="text-sm font-mono bg-amber-50 text-amber-900 border border-amber-200 px-1 rounded w-fit hover:bg-amber-100 transition-colors">
-                              {(quotation as any).display_balance_code}
+                          </Link>
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap">
+                          <div className={`flex flex-col gap-1 ${quotation.is_closed ? "line-through opacity-50" : ""}`}>
+                            <div className="font-mono text-sm bg-muted px-2 py-1 rounded inline-block">
+                              {quotation.quotation_number}{quotation.is_closed && <span className="text-red-600 font-bold"> (Tutup)</span>}
                             </div>
                             <div className="text-xs text-muted-foreground">
-                              {(quotation as any).balance_date && isValid(new Date((quotation as any).balance_date)) ? format(new Date((quotation as any).balance_date), "dd/MM/yyyy", { locale: idLocale }) : "-"}
+                              {quotation.created_at && isValid(new Date(quotation.created_at)) ? format(new Date(quotation.created_at), "dd/MM/yyyy", { locale: idLocale }) : "-"}
                             </div>
-                          </div>
-                        </Link>
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap">
-                        <div className={`flex flex-col gap-1 ${quotation.is_closed ? "line-through opacity-50" : ""}`}>
-                          <div className="font-mono text-sm bg-muted px-2 py-1 rounded inline-block">
-                            {quotation.quotation_number}{quotation.is_closed && <span className="text-red-600 font-bold"> (Tutup)</span>}
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            {quotation.created_at && isValid(new Date(quotation.created_at)) ? format(new Date(quotation.created_at), "dd/MM/yyyy", { locale: idLocale }) : "-"}
-                          </div>
-                        </div>
-                      </TableCell>
-                      {userRole && userRole !== 'staff' && (
-                        <TableCell className="whitespace-nowrap">
-                          <div className="flex flex-col gap-1 items-center justify-center h-full mt-2">
-                            <span className="text-sm font-medium">{quotation.creator?.name || "-"}</span>
                           </div>
                         </TableCell>
-                      )}
-
-                      <TableCell className="text-right relative overflow-visible whitespace-nowrap">
-                        {/* Corner Badge */}
-                        {quotation.po_ins?.some((pi: any) => pi.is_completed) && (
-                          <div className="absolute top-0 right-0 w-[75px] h-[75px] overflow-hidden pointer-events-none z-20">
-                            <div className="absolute top-[10px] right-[-30px] w-[100px] text-center rotate-45 bg-green-600 text-white text-[9px] font-bold py-1 shadow-sm">
-                              SELESAI
+                        {userRole && userRole !== 'staff' && (
+                          <TableCell className="whitespace-nowrap">
+                            <div className="flex flex-col gap-1 items-center justify-center h-full mt-2">
+                              <span className="text-sm font-medium">{quotation.creator?.name || "-"}</span>
                             </div>
-                          </div>
+                          </TableCell>
                         )}
-                        <div className="flex justify-end gap-1 relative z-10 items-center">
-                          <Button variant="ghost" size="icon" onClick={() => handleEdit(quotation)} title="Edit/Cetak" disabled={quotation.is_closed}>
-                            <Printer className="h-4 w-4" />
-                          </Button>
 
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <div className="relative inline-block">
-                                  {(() => {
-                                    const weekAge = quotation.created_at ? differenceInWeeks(new Date(), new Date(quotation.created_at)) : 0;
-                                    const isNew = weekAge === 0;
-                                    const isRecent = quotation.last_follow_up_at ? differenceInDays(new Date(), new Date(quotation.last_follow_up_at)) < 7 : false;
-                                    const isGreen = isNew || isRecent;
-                                    const badgeNumber = isGreen ? weekAge : Math.max(0, weekAge - 1);
-
-                                    return (
-                                      <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        onClick={() => handleFollowUp(quotation.id, quotation)}
-                                        className="relative"
-                                        disabled={isGreen || quotation.is_closed}
-                                      >
-                                        <PhoneCall className="h-4 w-4" />
-                                        <span className={`absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full text-[10px] text-white ${isGreen ? 'bg-green-600' : 'bg-red-600'}`}>
-                                          {badgeNumber}
-                                        </span>
-                                      </Button>
-                                    );
-                                  })()}
-                                </div>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p className="text-xs">
-                                  Terakhir follow up: {quotation.last_follow_up_at
-                                    ? format(new Date(quotation.last_follow_up_at), "dd MMMM yyyy HH:mm", { locale: idLocale })
-                                    : "Belum pernah"}
-                                </p>
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-
-                          {canManage && (quotation.created_by === userId || userRole === 'super_admin') && (!quotation.purchase_order_quotations || quotation.purchase_order_quotations.length === 0) && (
-                            quotation.is_closed ? (
-                              <Button variant="ghost" size="icon" title="Hapus (Tutup)" disabled>
-                                <Trash2 className="h-4 w-4 text-destructive opacity-50" />
-                              </Button>
-                            ) : (
-                              <DeleteConfirmationDialog
-                                onDelete={() => handleDelete(quotation.id)}
-                                trigger={
-                                  <Button variant="ghost" size="icon" title="Hapus">
-                                    <Trash2 className="h-4 w-4 text-destructive" />
-                                  </Button>
-                                }
-                              />
-                            )
+                        <TableCell className="text-right relative overflow-visible whitespace-nowrap">
+                          {/* Corner Badge */}
+                          {quotation.po_ins?.some((pi: any) => pi.is_completed) && (
+                            <div className="absolute top-0 right-0 w-[75px] h-[75px] overflow-hidden pointer-events-none z-20">
+                              <div className="absolute top-[10px] right-[-30px] w-[100px] text-center rotate-45 bg-green-600 text-white text-[9px] font-bold py-1 shadow-sm">
+                                SELESAI
+                              </div>
+                            </div>
                           )}
+                          <div className="flex justify-end gap-1 relative z-10 items-center">
+                            <Button variant="ghost" size="icon" onClick={() => handleEdit(quotation)} title="Edit/Cetak" disabled={quotation.is_closed}>
+                              <Printer className="h-4 w-4" />
+                            </Button>
 
-                          {canManage && (!quotation.purchase_order_quotations || quotation.purchase_order_quotations.length === 0) && (
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon">
-                                  <MoreHorizontal className="h-4 w-4" />
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <div className="relative inline-block">
+                                    {(() => {
+                                      const weekAge = quotation.created_at ? differenceInWeeks(new Date(), new Date(quotation.created_at)) : 0;
+                                      const isNew = weekAge === 0;
+                                      const isRecent = quotation.last_follow_up_at ? differenceInDays(new Date(), new Date(quotation.last_follow_up_at)) < 7 : false;
+                                      const isGreen = isNew || isRecent;
+                                      const badgeNumber = isGreen ? weekAge : Math.max(0, weekAge - 1);
+
+                                      return (
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          onClick={() => handleFollowUp(quotation.id, quotation)}
+                                          className="relative"
+                                          disabled={isGreen || quotation.is_closed}
+                                        >
+                                          <PhoneCall className="h-4 w-4" />
+                                          <span className={`absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full text-[10px] text-white ${isGreen ? 'bg-green-600' : 'bg-red-600'}`}>
+                                            {badgeNumber}
+                                          </span>
+                                        </Button>
+                                      );
+                                    })()}
+                                  </div>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p className="text-xs">
+                                    Terakhir follow up: {quotation.last_follow_up_at
+                                      ? format(new Date(quotation.last_follow_up_at), "dd MMMM yyyy HH:mm", { locale: idLocale })
+                                      : "Belum pernah"}
+                                  </p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+
+                            {canManage && (quotation.created_by === userId || userRole === 'super_admin') && (!quotation.purchase_order_quotations || quotation.purchase_order_quotations.length === 0) && (
+                              quotation.is_closed ? (
+                                <Button variant="ghost" size="icon" title="Hapus (Tutup)" disabled>
+                                  <Trash2 className="h-4 w-4 text-destructive opacity-50" />
                                 </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem onClick={() => toggleClosedStatus(quotation.id, false)}>
-                                  Masih Buka
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => toggleClosedStatus(quotation.id, true)}>
-                                  Sudah Tutup
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  );
-                });
-              })
-            )}
-          </TableBody>
-        </Table>
+                              ) : (
+                                <DeleteConfirmationDialog
+                                  onDelete={() => handleDelete(quotation.id)}
+                                  trigger={
+                                    <Button variant="ghost" size="icon" title="Hapus">
+                                      <Trash2 className="h-4 w-4 text-destructive" />
+                                    </Button>
+                                  }
+                                />
+                              )
+                            )}
+
+                            {canManage && (!quotation.purchase_order_quotations || quotation.purchase_order_quotations.length === 0) && (
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="icon">
+                                    <MoreHorizontal className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem onClick={() => toggleClosedStatus(quotation.id, false)}>
+                                    Masih Buka
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => toggleClosedStatus(quotation.id, true)}>
+                                    Sudah Tutup
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  });
+                })
+              )}
+            </TableBody>
+          </Table>
+        </div>
       </div>
 
       {paginatedQuotations.length > 0 && (

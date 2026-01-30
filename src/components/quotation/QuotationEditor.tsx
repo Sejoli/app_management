@@ -426,7 +426,7 @@ export default function QuotationEditor({ quotation, onClose, onUpdate }: Quotat
             </tbody>
           </table>
 
-          ${sortedBalanceItems.length > 0 || (quotation.attachments && quotation.attachments.length > 0) ? `
+          ${sortedBalanceItems.length > 0 ? `
              <div style="page-break-before: always;"></div>
              <table class="main-layout-table">
                <thead>
@@ -487,29 +487,7 @@ export default function QuotationEditor({ quotation, onClose, onUpdate }: Quotat
                             `;
     }).join('')}
 
-                        ${quotation.attachments && quotation.attachments.length > 0 ? `
-                           <tr>
-                              <td class="att-col-no text-center">-</td>
-                              <td>
-                                <div class="text-xs font-semibold mb-2">Lampiran Request</div>
-                                <div class="att-grid">
-                                  ${quotation.attachments.map((att: any) => {
-      const isPdf = att.file_path.toLowerCase().endsWith('.pdf');
-      const url = getItemStorageUrl(att.file_path);
-      return `
-                                        <div class="att-item-container">
-                                            ${isPdf
-          ? `<a href="${url}" target="_blank" class="pdf-link">View PDF (${att.file_name})</a>`
-          : `<img src="${url}" class="attachment-img" alt="${att.file_name}" />`
-        }
-                                            <div style="font-size: 10px; margin-top: 4px;">${att.file_name}</div>
-                                        </div>
-                                      `;
-    }).join('')}
-                                </div>
-                              </td>
-                           </tr>
-                        ` : ''}
+
 
                         </tbody>
                       </table>
@@ -830,7 +808,7 @@ export default function QuotationEditor({ quotation, onClose, onUpdate }: Quotat
         </div>
 
         {/* Attachment "Page" in Modal */}
-        {(sortedBalanceItems.length > 0 || (quotation.attachments && quotation.attachments.length > 0)) && (
+        {(sortedBalanceItems.length > 0) && (
           <div className="bg-white p-8 border rounded-lg shadow-sm mt-8">
             {/* Header for Attachment Page */}
             <div className="flex justify-between items-start mb-8 border-b pb-6">
@@ -896,32 +874,7 @@ export default function QuotationEditor({ quotation, onClose, onUpdate }: Quotat
                     );
                   })}
 
-                  {quotation.attachments && quotation.attachments.length > 0 && (
-                    <tr>
-                      <td className="border border-gray-200 p-2 text-center text-xs align-top">-</td>
-                      <td className="border border-gray-200 p-2 align-top">
-                        <div className="text-xs font-semibold mb-2">Lampiran Request</div>
-                        <div className="flex flex-wrap gap-4 justify-center">
-                          {quotation.attachments.map((att: any, idx: number) => {
-                            const isPdf = att.file_path.toLowerCase().endsWith('.pdf');
-                            const url = getItemStorageUrl(att.file_path);
-                            return (
-                              <div key={idx} className="text-center">
-                                {isPdf ? (
-                                  <a href={url} target="_blank" rel="noopener noreferrer" className="inline-block px-3 py-1 bg-gray-100 border rounded text-xs text-blue-800 hover:bg-gray-200">
-                                    View PDF ({att.file_name})
-                                  </a>
-                                ) : (
-                                  <img src={url} alt={att.file_name} className="max-w-[200px] max-h-[200px] object-contain border shadow-sm mx-auto mb-1" />
-                                )}
-                                <div className="text-[10px] text-gray-500 mt-1">{att.file_name}</div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </td>
-                    </tr>
-                  )}
+
                 </tbody>
               </table>
             </div>

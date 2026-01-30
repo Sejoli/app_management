@@ -552,11 +552,35 @@ export default function PurchaseOrderPrint({ po, onUpdate, internalNumberOverrid
                     </table>
 
                     ${(() => {
-                const itemsWithAttachments = items.filter(i => i.document_path);
-                const reqAttachments = po.quotations?.[0]?.request?.attachments || [];
-                const hasAttachments = itemsWithAttachments.length > 0 || reqAttachments.length > 0;
+                // Combine and normalize attachments
+                const attachmentList: any[] = [];
 
-                if (!hasAttachments) return '';
+                // 1. From Balance Items
+                items.forEach(item => {
+                    if (item.document_path) {
+                        const paths = item.document_path.split(',').filter(Boolean);
+                        attachmentList.push({
+                            type: 'ITEM',
+                            name: item.customer_spec || item.vendor_spec || "Item",
+                            paths: paths
+                        });
+                    }
+                });
+
+                // 2. From Request (DISABLED)
+                // const reqAttachments = po.quotations?.[0]?.request?.attachments || [];
+                // if (reqAttachments.length > 0) {
+                //     reqAttachments.forEach((att: any) => {
+                //         attachmentList.push({
+                //             type: 'REQUEST',
+                //             name: "Ref: Request Attachment",
+                //             fileName: att.file_name,
+                //             path: att.file_path
+                //         });
+                //     });
+                // }
+
+                if (attachmentList.length === 0) return '';
 
                 return `
                             <div style="page-break-before: always;"></div>
@@ -589,44 +613,38 @@ export default function PurchaseOrderPrint({ po, onUpdate, internalNumberOverrid
                                                     </tr>
                                                 </thead>
                                                 <tbody>
-                                                    ${itemsWithAttachments.map((item, index) => `
-                                                        <tr>
-                                                            <td class="col-center">${index + 1}</td>
-                                                            <td>
-
-                                                                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 16px;">
-                                                                    ${item.document_path.split(',').map((path: string) => {
-                    const url = getAttachmentUrl(path);
-                    const isPdf = path.toLowerCase().endsWith('.pdf');
+                                                    ${attachmentList.map((item, index) => {
                     return `
-                                                                            <div style="border: 1px solid #e5e7eb; padding: 8px; border-radius: 4px; text-align: center;">
-                                                                                ${isPdf
-                            ? `<a href="${url}" target="_blank" style="color: #2563eb; text-decoration: underline;">View PDF</a>`
-                            : `<img src="${url}" style="max-width: 100%; height: auto; max-height: 150px; object-fit: contain;" />`
+                                                            <tr>
+                                                                <td class="col-center" style="vertical-align: top;">${index + 1}</td>
+                                                                <td style="vertical-align: top;">
+                                                                     ${item.type === 'ITEM' ?
+                            `<div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                                                                            ${item.paths.map((path: string) => {
+                                const url = getAttachmentUrl(path);
+                                const isPdf = path.toLowerCase().endsWith('.pdf');
+                                return `
+                                                                                     <div style="border: 1px solid #e5e7eb; padding: 4px; border-radius: 4px; text-align: center;">
+                                                                                         ${isPdf
+                                        ? `<a href="${url}" target="_blank" style="color: #2563eb; text-decoration: underline; font-size: 10px;">View PDF</a>`
+                                        : `<img src="${url}" style="max-width: 150px; max-height: 100px; object-fit: contain;" />`
+                                    }
+                                                                                     </div>
+                                                                                `;
+                            }).join('')}
+                                                                        </div>`
+                            :
+                            `<div style="display: inline-block; border: 1px solid #e5e7eb; padding: 4px; border-radius: 4px;">
+                                                                            ${item.path.toLowerCase().endsWith('.pdf')
+                                ? `<a href="${getAttachmentUrl(item.path)}" target="_blank" style="color: #2563eb; text-decoration: underline; font-size: 10px;">View PDF (${item.fileName})</a>`
+                                : `<img src="${getAttachmentUrl(item.path)}" style="max-width: 150px; max-height: 100px; object-fit: contain;" />`
+                            }
+                                                                        </div>`
                         }
-                                                                            </div>
-                                                                        `;
+                                                                </td>
+                                                            </tr>
+                                                        `;
                 }).join('')}
-                                                                </div>
-                                                            </td>
-                                                        </tr>
-                                                    `).join('')}
-                                                    
-                                                    ${reqAttachments.map((att: any) => `
-                                                        <tr>
-                                                            <td class="col-center">-</td>
-                                                            <td>
-                                                                <div style="font-weight: 600; margin-bottom: 8px;">Ref: Request Attachment</div>
-                                                                <div style="display: inline-block; border: 1px solid #e5e7eb; padding: 8px; border-radius: 4px; text-align: center;">
-                                                                    ${att.file_path.toLowerCase().endsWith('.pdf')
-                        ? `<a href="${getAttachmentUrl(att.file_path)}" target="_blank" style="color: #2563eb; text-decoration: underline;">View PDF (${att.file_name})</a>`
-                        : `<img src="${getAttachmentUrl(att.file_path)}" style="max-width: 100%; height: auto; max-height: 150px; object-fit: contain;" />`
-                    }
-                                                                    <div style="font-size: 10px; color: #6b7280; margin-top: 4px;">${att.file_name}</div>
-                                                                </div>
-                                                            </td>
-                                                        </tr>
-                                                    `).join('')}
                                                 </tbody>
                                             </table>
                                         </td>
@@ -1072,67 +1090,86 @@ export default function PurchaseOrderPrint({ po, onUpdate, internalNumberOverrid
                                     />
                                 )}
                                 <div>
-                                    <h2 className="font-bold text-lg text-gray-900">{company?.name || "Nama Perusahaan"}</h2>
-                                    <p className="text-sm text-gray-500">{company?.address}</p>
-                                    <p className="text-sm text-gray-500">{company?.phone}</p>
+                                    <h2 className="font-bold text-[11pt] text-green-600">{company?.name || "Nama Perusahaan"}</h2>
+                                    <p className="text-[9pt] text-gray-500">{company?.address}</p>
+                                    <p className="text-[9pt] text-gray-500">{company?.email}</p>
                                 </div>
                             </div>
                             <div className="text-right">
-                                <h1 className="text-2xl font-bold text-gray-900 tracking-tight">LAMPIRAN</h1>
+                                <h1 className="text-[15pt] font-bold text-blue-800 tracking-tight">LAMPIRAN</h1>
                             </div>
                         </div>
 
                         <table className="w-full border-collapse border border-gray-200 mb-8">
                             <thead>
-                                <tr className="bg-gray-50 text-gray-900">
-                                    <th className="border border-gray-200 p-3 text-center w-12 font-semibold text-sm">No</th>
-                                    <th className="border border-gray-200 p-3 text-left font-semibold text-sm">Lampiran</th>
+                                <tr className="bg-blue-800 text-white">
+                                    <th className="border border-gray-200 p-3 text-center w-12 font-semibold text-[11pt]">No</th>
+                                    <th className="border border-gray-200 p-3 text-left font-semibold text-[11pt]">Lampiran</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {items.filter(i => i.document_path).map((item, index) => (
-                                    <tr key={`att-item-${index}`}>
-                                        <td className="border border-gray-200 p-3 text-center text-sm">{index + 1}</td>
-                                        <td className="border border-gray-200 p-3">
+                                {(() => {
+                                    // Combine and normalize for Display
+                                    const attachmentList: any[] = [];
+                                    items.forEach(item => {
+                                        if (item.document_path) {
+                                            const paths = item.document_path.split(',').filter(Boolean);
+                                            attachmentList.push({
+                                                type: 'ITEM',
+                                                name: item.customer_spec || item.vendor_spec || "Item",
+                                                paths: paths
+                                            });
+                                        }
+                                    });
 
-                                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                                {item.document_path.split(',').map((path: string, i: number) => {
-                                                    const url = getAttachmentUrl(path);
-                                                    const isPdf = path.toLowerCase().endsWith('.pdf');
-                                                    return (
-                                                        <div key={i} className="border p-2 rounded flex flex-col items-center">
-                                                            {isPdf ? (
-                                                                <a href={url} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline text-xs">
-                                                                    View PDF
-                                                                </a>
-                                                            ) : (
-                                                                <img src={url} alt="Attachment" className="max-w-full h-auto max-h-32 object-contain" />
-                                                            )}
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))}
-                                {po.quotations?.[0]?.request?.attachments?.map((att: any, index: number) => (
-                                    <tr key={`att-req-${index}`}>
-                                        <td className="border border-gray-200 p-3 text-center text-sm">-</td>
-                                        <td className="border border-gray-200 p-3">
-                                            <div className="text-sm font-semibold mb-2">Ref: Request Attachment</div>
-                                            <div className="flex flex-col items-center border p-2 rounded w-fit">
-                                                {att.file_path.toLowerCase().endsWith('.pdf') ? (
-                                                    <a href={getAttachmentUrl(att.file_path)} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline text-xs">
-                                                        View PDF ({att.file_name})
-                                                    </a>
+                                    // 2. Request Attachments (DISABLED)
+                                    // const reqAttachments = po.quotations?.[0]?.request?.attachments || [];
+                                    // reqAttachments.forEach((att: any) => {
+                                    //     attachmentList.push({
+                                    //         type: 'REQUEST',
+                                    //         name: "Ref: Request Attachment",
+                                    //         fileName: att.file_name,
+                                    //         path: att.file_path
+                                    //     });
+                                    // });
+
+                                    return attachmentList.map((item, index) => (
+                                        <tr key={index}>
+                                            <td className="border border-gray-200 p-3 text-center text-sm align-top">{index + 1}</td>
+                                            <td className="border border-gray-200 p-3 align-top">
+                                                {item.type === 'ITEM' ? (
+                                                    <div className="flex flex-wrap gap-4">
+                                                        {item.paths.map((path: string, i: number) => {
+                                                            const url = getAttachmentUrl(path);
+                                                            const isPdf = path.toLowerCase().endsWith('.pdf');
+                                                            return (
+                                                                <div key={i} className="border p-2 rounded flex flex-col items-center">
+                                                                    {isPdf ? (
+                                                                        <a href={url} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline text-xs">
+                                                                            View PDF
+                                                                        </a>
+                                                                    ) : (
+                                                                        <img src={url} alt="Attachment" className="max-w-[150px] h-auto max-h-[100px] object-contain" />
+                                                                    )}
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
                                                 ) : (
-                                                    <img src={getAttachmentUrl(att.file_path)} alt={att.file_name} className="max-w-full h-auto max-h-32 object-contain" />
+                                                    <div className="flex flex-col items-center border p-2 rounded w-fit">
+                                                        {item.path.toLowerCase().endsWith('.pdf') ? (
+                                                            <a href={getAttachmentUrl(item.path)} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline text-xs">
+                                                                View PDF ({item.fileName})
+                                                            </a>
+                                                        ) : (
+                                                            <img src={getAttachmentUrl(item.path)} alt={item.name} className="max-w-[150px] h-auto max-h-[100px] object-contain" />
+                                                        )}
+                                                    </div>
                                                 )}
-                                                <span className="text-xs mt-1 text-gray-500">{att.file_name}</span>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))}
+                                            </td>
+                                        </tr>
+                                    ));
+                                })()}
                             </tbody>
                         </table>
                     </div>
