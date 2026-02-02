@@ -33,6 +33,8 @@ interface ItemEditDialogProps {
   balanceId: string;
   shippingVendorGroups: Array<{ id: string; group_name: string; cost: number }>;
   shippingCustomerGroups: Array<{ id: string; group_name: string; cost: number }>;
+  overallCosts: Array<{ id: string; cost_category: string; amount: number }>;
+  otherItemsTotalQty: number;
   onSuccess: () => void;
 }
 
@@ -42,6 +44,8 @@ export default function ItemEditDialog({
   item,
   shippingVendorGroups,
   shippingCustomerGroups,
+  overallCosts,
+  otherItemsTotalQty,
   onSuccess,
   balanceId,
 }: ItemEditDialogProps) {
@@ -177,11 +181,17 @@ export default function ItemEditDialog({
     const ship_pct = deliveryPercentage / 100;
     const Shipping = ship_pct * B;
 
-    // Assume 0% payment for preview since we don't have customer settings here
+    // Assume 0% payment for preview since we don't have customer settings here (should ideally receive as prop too but staying within scope)
     const pay_pct = 0;
     const Payment_cost = pay_pct * B;
 
-    const Cost_per_pc = B + Vendor_per_pc + Mpa_per_pc + Difficulty + Shipping + Payment_cost;
+    // Calculate Overall Cost Distribution
+    // Estimate: distribute total overall cost across (other existing items + this edited item qty)
+    const totalOverallCost = overallCosts.reduce((sum, cost) => sum + cost.amount, 0);
+    const estimatedTotalQty = otherItemsTotalQty + Q;
+    const overallCostPerUnit = estimatedTotalQty > 0 ? totalOverallCost / estimatedTotalQty : 0;
+
+    const Cost_per_pc = B + Vendor_per_pc + Mpa_per_pc + Difficulty + Shipping + Payment_cost + overallCostPerUnit;
 
     // Assume 0% margin for preview
     const margin_pct = 0;

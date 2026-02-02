@@ -288,6 +288,10 @@ export default function ManualBook() {
                                             <span><strong>Payment Term</strong> (Tempo Bayar)</span>
                                             <span className="font-mono text-gray-600">B x %Payment</span>
                                         </li>
+                                        <li className="flex justify-between border-b pb-2">
+                                            <span><strong>Biaya Keseluruhan</strong> (Distributed)</span>
+                                            <span className="font-mono text-gray-600">Total Biaya / Total Qty</span>
+                                        </li>
 
                                         <div className="bg-yellow-50 p-2 rounded text-xs font-semibold text-yellow-800 mt-2">
                                             Total Cost (HPP) = Jumlahkan semua poin di atas
@@ -337,22 +341,23 @@ export default function ManualBook() {
                                         <li><strong>Difficulty/Resiko:</strong> 2% (Rp 300.000 - untuk garansi/handling)</li>
                                         <li><strong>Delivery Time:</strong> 1% (Rp 150.000 - kompensasi waktu)</li>
                                         <li><strong>Payment Term:</strong> 1% (Rp 150.000 - bunga/tempo)</li>
+                                        <li><strong>Biaya Keseluruhan:</strong> Rp 50.000 (Asumsi beban admin per unit)</li>
                                     </ul>
                                     <div className="bg-white p-3 rounded border border-blue-100 font-mono mt-2">
-                                        Total HPP (Modal) = 15.000.000 + 100.000 + 150.000 + 300.000 + 150.000 + 150.000<br />
-                                        = <strong>Rp 15.850.000</strong>
+                                        Total HPP (Modal) = 15.000.000 + 100.000 + 150.000 + 300.000 + 150.000 + 150.000 + 50.000<br />
+                                        = <strong>Rp 15.900.000</strong>
                                     </div>
                                     <p className="mt-2">
                                         Anda ingin untung <strong>Margin 20%</strong> dari Customer.
                                     </p>
                                     <div className="bg-white p-3 rounded border border-blue-100 font-mono mt-2">
-                                        Harga Jual (Sebelum PPN) = Rp 15.850.000 + 20% = <strong>Rp 19.020.000</strong>
+                                        Harga Jual (Sebelum PPN) = Rp 15.900.000 + 20% = <strong>Rp 19.080.000</strong>
                                     </div>
                                     <p className="mt-2">
                                         Terakhir, ditambah <strong>PPN 11%</strong>.
                                     </p>
                                     <div className="bg-blue-600 text-white p-4 rounded text-center font-bold text-lg mt-4 shadow-sm">
-                                        Harga Final ke Customer = Rp 21.112.200
+                                        Harga Final ke Customer = Rp 21.178.800
                                     </div>
                                 </div>
                             </div>

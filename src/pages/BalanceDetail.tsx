@@ -58,6 +58,9 @@ interface BalanceItem {
   total_selling_price: number;
   document_path?: string;
   position: number;
+  balance_entry_id: number;
+  offering_letter_number?: string;
+  offering_date?: string;
 }
 
 interface SortableRowProps {
@@ -629,8 +632,13 @@ export default function BalanceDetail() {
       // 5. Payment_cost = pay_pct × B
       const Payment_cost = pay_pct * B;
 
-      // 6. Cost_per_pc = B + Vendor_per_pc + Mpa_per_pc + Difficulty + Shipping + Payment_cost
-      const Cost_per_pc = B + Vendor_per_pc + Mpa_per_pc + Difficulty + Shipping + Payment_cost;
+      // Calculate Total Qty for Overall Cost Distribution
+      const totalOverallCost = overallCosts.reduce((sum, cost) => sum + cost.amount, 0);
+      const totalQty = itemsToProcess.reduce((sum, item) => sum + item.qty, 0);
+      const overallCostPerUnit = totalQty > 0 ? totalOverallCost / totalQty : 0;
+
+      // 6. Cost_per_pc = B + Vendor_per_pc + Mpa_per_pc + Difficulty + Shipping + Payment_cost + overallCostPerUnit
+      const Cost_per_pc = B + Vendor_per_pc + Mpa_per_pc + Difficulty + Shipping + Payment_cost + overallCostPerUnit;
 
       // margin = margin penjualan (20% → 0.20)
       const margin_pct = margin / 100;
@@ -1081,6 +1089,8 @@ export default function BalanceDetail() {
               shippingCustomerGroups={shippingCustomer}
               customerMargin={customerSettings?.margin || 0}
               customerPaymentPercentage={customerSettings?.payment_percentage || 0}
+              overallCosts={overallCosts}
+              currentTotalQty={items.reduce((sum, i) => sum + i.qty, 0)}
               onSuccess={async () => {
                 setIsAddItemOpen(false);
                 // Optimistically calculate without waiting for full fetch if possible? 
@@ -1363,6 +1373,9 @@ export default function BalanceDetail() {
         balanceId={balanceId || ""}
         shippingVendorGroups={shippingVendor}
         shippingCustomerGroups={shippingCustomer}
+        overallCosts={overallCosts}
+        // Calculate total qty of OTHER items to correctly preview effect of changing this item's qty
+        otherItemsTotalQty={items.reduce((sum, i) => sum + (i.id === editItem?.id ? 0 : i.qty), 0)}
         onSuccess={async () => {
           setEditItem(null);
           const newItems = await fetchItems();

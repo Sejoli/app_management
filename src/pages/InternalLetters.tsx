@@ -113,6 +113,37 @@ const InternalLetters = () => {
     const [currentQuotationId, setCurrentQuotationId] = useState("");
     const [expandedVendorIds, setExpandedVendorIds] = useState<Set<string>>(new Set());
 
+    // Delete State
+    const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+    const [itemsToDelete, setItemsToDelete] = useState<string[]>([]);
+
+    const handleDeleteClick = (letterIds: string[]) => {
+        setItemsToDelete(letterIds);
+        setIsDeleteDialogOpen(true);
+    };
+
+    const handleConfirmDelete = async () => {
+        if (itemsToDelete.length === 0) return;
+        const toastId = toast.loading("Menghapus data...");
+
+        try {
+            const { error } = await supabase
+                .from("internal_letters")
+                .delete()
+                .in("id", itemsToDelete);
+
+            if (error) throw error;
+
+            toast.success("Berhasil menghapus data", { id: toastId });
+            fetchLetters();
+            setIsDeleteDialogOpen(false);
+            setItemsToDelete([]);
+        } catch (error) {
+            console.error(error);
+            toast.error("Gagal menghapus data", { id: toastId });
+        }
+    };
+
     const toggleVendorExpand = (poId: string) => {
         const newSet = new Set(expandedVendorIds);
         if (newSet.has(poId)) newSet.delete(poId);
@@ -154,11 +185,52 @@ const InternalLetters = () => {
         }
     };
 
+    const handleBulkStatusToggle = async (groupLetters: InternalLetter[]) => {
+        if (!canManage) return;
 
-    const handleViewDetail = async (quotationId: string, subject?: string, invoiceType?: string) => {
+        // Logic: If ANY is not approved, Approve ALL. Else (all approved), Unapprove ALL.
+        const isAllApproved = groupLetters.every(l => l.status === 'approved');
+        const newStatus = isAllApproved ? 'pending' : 'approved';
+
+        const idsToUpdate = groupLetters.map(l => l.id);
+        const toastId = toast.loading(`Memperbarui ${idsToUpdate.length} item...`);
+
+        try {
+            const updatePayload: any = {
+                status: newStatus
+            };
+
+            if (newStatus === 'approved') {
+                updatePayload.approved_at = new Date().toISOString();
+                updatePayload.approved_by = userId;
+            } else {
+                updatePayload.approved_at = null;
+                updatePayload.approved_by = null;
+            }
+
+            const { error } = await supabase
+                .from("internal_letters")
+                .update(updatePayload)
+                .in("id", idsToUpdate);
+
+            if (error) throw error;
+
+            toast.success(`Berhasil mengubah status ${idsToUpdate.length} surat menjadi ${newStatus === 'approved' ? 'Disetujui' : 'Pending'}`, { id: toastId });
+            fetchLetters();
+        } catch (e) {
+            console.error(e);
+            toast.error("Gagal memperbarui status bulk", { id: toastId });
+        }
+    };
+
+
+    const [currentLetterStatus, setCurrentLetterStatus] = useState<string>('pending');
+
+    const handleViewDetail = async (quotationId: string, subject?: string, invoiceType?: string, status: string = 'pending') => {
         setCurrentInvoiceSubject(subject || "");
         setCurrentInvoiceType(invoiceType || "");
         setCurrentQuotationId(quotationId);
+        setCurrentLetterStatus(status);
         setExpandedVendorIds(new Set()); // Reset toggle state
         const { data, error } = await (supabase as any)
             .from("purchase_order_quotations")
@@ -166,6 +238,7 @@ const InternalLetters = () => {
                 purchase_orders(
                 id,
                 po_number,
+                status,
                 vendor_id,
                 created_by,
                 created_at,
@@ -193,7 +266,13 @@ const InternalLetters = () => {
                         quotation_number,
                         created_at,
                         franco,
-                        po_ins(vendor_letter_number, subject, invoice_type, internal_letters(created_at)),
+                        po_ins(
+                            id,
+                            vendor_letter_number, 
+                            subject, 
+                            invoice_type, 
+                            internal_letters(id, status, created_at)
+                        ),
                         balance_link: quotation_balances(
                             id,
                             balance_id,
@@ -225,10 +304,23 @@ const InternalLetters = () => {
         // Fetch Linked Balances to get Settings
         const { data: qLinks } = await (supabase as any)
             .from("quotation_balances")
-            .select("balance_id")
+            .select("balance_id, entry_id") // Fetch entry_id too
             .eq("quotation_id", quotationId);
 
         const balanceIds = qLinks?.map((l: any) => l.balance_id) || [];
+        // Map balance ID to entry ID for precise setting lookup
+        const balanceEntryMap = new Map();
+        qLinks?.forEach((l: any) => {
+            if (l.balance_id && l.entry_id) {
+                balanceEntryMap.set(l.balance_id, l.entry_id);
+            }
+        });
+
+        // Fetch Live PPN Settings from Balance (General Settings)
+        const { data: balanceSettings } = await (supabase as any)
+            .from("balance_settings")
+            .select("balance_id, ppn_percentage")
+            .in("balance_id", balanceIds);
 
         // Fetch Live Vendor Settings using Balance IDs
         const { data: vendorSettings } = await (supabase as any)
@@ -238,16 +330,29 @@ const InternalLetters = () => {
 
         // Flatten logic similar to PurchaseOrders group
         const pos = data?.map((d: any) => {
-            // SAFE CLONE to ensure we can mutate properties
+            // SAFE CLONE to ensure we can Mutate properties
             const po = { ...d.purchase_orders };
 
-            // Apply Live Settings if available
+            // Find valid PPN setting
+            // Priorities:
+            // 1. Balance Settings (if exists)
+            // 2. Existing PO PPN
+            // 3. Default 11
+            const pSettings = balanceSettings?.find((s: any) => balanceIds.includes(s.balance_id));
+
+            // Set PPN from Balance Settings logic
+            if (pSettings && pSettings.ppn_percentage !== undefined) {
+                po.ppn = pSettings.ppn_percentage;
+            }
+
+            // Apply Live Vendor Settings if available
             // Note: If multiple balances have settings for same vendor, take the first one found
             const settings = vendorSettings?.find((s: any) => s.vendor_id === po.vendor_id);
 
             console.log(`[LetterDebug] Processing PO ${po.po_number}(${po.vendor?.company_name})`, {
                 vendorId: po.vendor_id,
                 foundSettings: settings,
+                foundPPN: pSettings,
                 originalDP: po.dp_percentage
             });
 
@@ -274,7 +379,9 @@ const InternalLetters = () => {
                 request: {
                     ...pq.quotation.request,
                     request_date: pq.quotation.request.created_at
-                }
+                },
+                // Pass balance link for deeper logic if needed by component
+                balance_link: pq.quotation.balance_link
             }));
 
             return {
@@ -325,7 +432,7 @@ const InternalLetters = () => {
 
             // Refresh the detail view
             if (currentQuotationId) {
-                handleViewDetail(currentQuotationId, currentInvoiceSubject, currentInvoiceType);
+                handleViewDetail(currentQuotationId, currentInvoiceSubject, currentInvoiceType, currentLetterStatus);
             }
 
         } catch (error: any) {
@@ -734,15 +841,15 @@ const InternalLetters = () => {
                 <Table>
                     <TableHeader>
                         <TableRow>
-                            <TableHead className="w-12 whitespace-nowrap">No</TableHead>
-                            <TableHead className="whitespace-nowrap">Info Permintaan</TableHead>
-                            <TableHead className="w-[50px] whitespace-nowrap"></TableHead>
-                            <TableHead className="w-32 whitespace-nowrap">No Neraca</TableHead>
-                            <TableHead className="whitespace-nowrap">No Penawaran</TableHead>
-                            {userRole && userRole !== 'staff' && <TableHead className="w-[150px] whitespace-nowrap">Dibuat Oleh</TableHead>}
-                            <TableHead className="whitespace-nowrap">Info PO In</TableHead>
+                            <TableHead className="w-12 text-center align-middle whitespace-nowrap border-r border-gray-100">No</TableHead>
+                            <TableHead className="w-12 text-center align-middle whitespace-nowrap"></TableHead>
 
-                            <TableHead className="w-32 whitespace-nowrap text-right">Aksi</TableHead>
+                            <TableHead className="text-center align-middle whitespace-nowrap">Info Permintaan</TableHead>
+                            <TableHead className="text-center align-middle whitespace-nowrap">No Neraca</TableHead>
+                            <TableHead className="text-center align-middle whitespace-nowrap">No Penawaran</TableHead>
+                            {userRole && userRole !== 'staff' && <TableHead className="text-center align-middle whitespace-nowrap">Dibuat Oleh</TableHead>}
+                            <TableHead className="text-center align-middle whitespace-nowrap">Info PO In</TableHead>
+                            <TableHead className="text-center align-middle whitespace-nowrap">Aksi</TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -750,6 +857,7 @@ const InternalLetters = () => {
                             Array.from({ length: 5 }).map((_, i) => (
                                 <TableRow key={i}>
                                     <TableCell><Skeleton className="h-4 w-8" /></TableCell>
+                                    <TableCell><Skeleton className="h-4 w-4" /></TableCell>
                                     <TableCell>
                                         <div className="space-y-2">
                                             <Skeleton className="h-4 w-32" />
@@ -759,13 +867,9 @@ const InternalLetters = () => {
                                     <TableCell><Skeleton className="h-4 w-24" /></TableCell>
                                     <TableCell><Skeleton className="h-4 w-24" /></TableCell>
                                     {userRole && userRole !== 'staff' && (
-                                        <TableCell>
-                                            <div className="space-y-2">
-                                                <Skeleton className="h-4 w-40" />
-                                                <Skeleton className="h-3 w-32" />
-                                            </div>
-                                        </TableCell>
+                                        <TableCell><Skeleton className="h-4 w-32" /></TableCell>
                                     )}
+                                    <TableCell><Skeleton className="h-4 w-32" /></TableCell>
                                     <TableCell><Skeleton className="h-8 w-8" /></TableCell>
                                 </TableRow>
                             ))
@@ -784,242 +888,213 @@ const InternalLetters = () => {
                             </TableRow>
                         ) : (
                             paginatedLetters.map((group, groupIndex) => {
-                                let isFirstInGroup = true;
-                                // Calculate Global Index based on Group Index (Pagination aware)
+                                // Use the first letter as representative for the group info
+                                const l = group[0];
+                                const po = l.po_in || {} as any;
+                                const q = po.quotation || {} as any;
+                                const req = q.request || {} as any;
+                                const cust = req.customer || {} as any;
+                                const attachments = po.attachments || [];
+
+                                // Calculate Global Index
                                 const currentGlobalIndex = (currentPage - 1) * itemsPerPage + groupIndex + 1;
 
-                                return group.map((l, lIndex) => {
-                                    const po = l.po_in || {} as any;
-                                    const q = po.quotation || {} as any;
-                                    const req = q.request || {} as any;
-                                    const cust = req.customer || {} as any;
+                                return (
+                                    <TableRow key={l.id} className="relative group">
+                                        <TableCell className="text-center align-middle relative overflow-hidden p-0 h-16 border-r border-gray-100">
+                                            <span className="relative z-10">{currentGlobalIndex}</span>
+                                            {/* Status Badge (Group Level) */}
+                                            {(() => {
+                                                const allApproved = group.every(x => x.status === 'approved');
+                                                const statusColor = allApproved ? 'bg-emerald-600' : 'bg-amber-600';
+                                                const statusText = allApproved ? 'OK' : 'PEND';
 
-                                    const isFirst = isFirstInGroup;
-                                    isFirstInGroup = false;
-
-                                    // if (isFirst) globalIndex++; // Removed
-
-                                    return (
-                                        <TableRow key={l.id}>
-                                            {isFirst && (
-                                                <>
-                                                    <TableCell rowSpan={group.length} className="align-middle border-r whitespace-nowrap">
-                                                        {currentGlobalIndex}
-                                                    </TableCell>
-                                                    <TableCell rowSpan={group.length} className="align-middle border-r relative whitespace-nowrap overflow-hidden">
-                                                        {/* Status Corner Badge */}
-                                                        {(() => {
-                                                            // Check if ANY letter in this group is approved? Or just this specific one?
-                                                            // Logic: Internal Letter is per-item here. But this cell rows spans the group.
-                                                            // The group is by Request. Usually 1 Request = 1 Internal Letter in this view? 
-                                                            // No, l is iterated. But this cell has rowSpan={group.length}.
-                                                            // So this cell represents the whole GROUP (Request).
-                                                            // If the group has multiple letters, do we show status of ALL?
-                                                            // Let's check if all letters in group are approved.
-                                                            const allApproved = group.every(x => x.status === 'approved');
-                                                            const anyApproved = group.some(x => x.status === 'approved');
-                                                            const statusColor = allApproved ? 'bg-emerald-600' : 'bg-amber-600';
-                                                            const statusText = allApproved ? 'OK' : 'PEND';
-
-                                                            return (
-                                                                <div className="absolute top-0 left-0 w-[75px] h-[75px] overflow-hidden pointer-events-none z-20">
-                                                                    <div className={`absolute top-[10px] left-[-30px] w-[100px] text-center -rotate-45 ${statusColor} text-white text-[9px] font-bold py-1 shadow-sm`}>
-                                                                        {statusText}
-                                                                    </div>
-                                                                </div>
-                                                            );
-                                                        })()}
-
-                                                        <span className="font-medium bg-green-100 text-green-800 px-2 py-1 rounded text-xs inline-block mb-2 ml-10 relative z-10">
-                                                            {req.request_code}
-                                                        </span>
-                                                        <div className="flex flex-col gap-1 relative z-10 ml-2">
-                                                            <span className="font-bold text-base">{cust?.company_name || "-"}</span>
-                                                            <span className="font-medium">{req.title || "-"}</span>
-                                                            <div className="text-sm text-muted-foreground flex flex-col gap-1">
-                                                                <div>
-                                                                    <span className="font-semibold">No Surat:</span> {req.letter_number || "-"}
-                                                                </div>
-                                                                <div>
-                                                                    <span className="font-semibold">PIC:</span> {req.customer_pic?.name || "-"}
-                                                                </div>
-                                                                <div>
-                                                                    <span className="font-semibold">Tanggal:</span> {req.created_at ? format(new Date(req.created_at), "dd/MM/yyyy") : "-"}
-                                                                </div>
-                                                                {req.customer_attachments?.length > 0 && (
-                                                                    <div className="flex flex-wrap gap-2 mt-1">
-                                                                        {req.customer_attachments.map((att: any, i: number) => (
-                                                                            <a key={i} href={getStorageUrl(att.file_path, "request-attachments")} target="_blank" className="text-blue-600 flex items-center text-xs hover:underline">
-                                                                                <LinkIcon className="h-3 w-3 mr-1" /> {att.file_name || "File"}
-                                                                            </a>
-                                                                        ))}
-                                                                    </div>
-                                                                )}
-                                                            </div>
+                                                return (
+                                                    <div className="absolute top-0 left-0 w-[75px] h-[75px] overflow-hidden pointer-events-none z-20">
+                                                        <div className={`absolute top-[10px] left-[-30px] w-[100px] text-center -rotate-45 ${statusColor} text-white text-[9px] font-bold py-1 shadow-sm`}>
+                                                            {statusText}
                                                         </div>
-                                                    </TableCell>
-                                                </>
-                                            )}
-
-                                            <TableCell className="align-middle text-center whitespace-nowrap">
-                                                {/* Checkbox Visibility:
-                                                    - Always show for Owner / SuperAdmin
-                                                    - For Pimpinan (viewing others' data): ONLY show if it's already tracked (trackedIds.has(l.id)). If not tracked, hide it.
-                                                 */}
-                                                {(userRole === 'pimpinan' && l.creator?.user_id !== userId && !trackedIds.has(l.id)) ? (
-                                                    <div className="w-4 h-4 mx-auto" />
-                                                ) : (
-                                                    <Checkbox
-                                                        disabled={trackedIds.has(l.id) || (userRole !== 'super_admin' && l.created_by !== userId)}
-                                                        checked={selectedTrackingId === l.id || trackedIds.has(l.id)}
-                                                        onCheckedChange={(checked) => {
-                                                            if (l.status !== 'approved') {
-                                                                toast.error("Belum bisa lanjut, tunggu di approve", {
-                                                                    description: "Item harus disetujui pimpinan sebelum bisa dilanjutkan ke tracking."
-                                                                });
-                                                                return;
-                                                            }
-
-                                                            if (checked) {
-                                                                setSelectedTrackingId(l.id);
-                                                                setSelectedTrackingLetter(l.po_in);
-                                                            } else {
-                                                                setSelectedTrackingId(null);
-                                                                setSelectedTrackingLetter(null);
-                                                            }
-                                                        }}
-                                                    />
-                                                )}
-                                            </TableCell>
-
-                                            <TableCell className="whitespace-nowrap">
-                                                <div className="text-sm font-mono bg-amber-50 text-amber-900 border border-amber-200 px-1 rounded w-fit">
-                                                    {getBalanceCode(po)}
-                                                </div>
-                                                <div className="text-xs text-muted-foreground mt-1">
-                                                    {po.quotation?.balance_link?.[0]?.balance?.created_at && isValid(new Date(po.quotation.balance_link[0].balance.created_at))
-                                                        ? format(new Date(po.quotation.balance_link[0].balance.created_at), "dd/MM/yyyy", { locale: id })
-                                                        : "-"}
-                                                </div>
-                                            </TableCell>
-                                            <TableCell className="whitespace-nowrap">
-                                                <div className="font-mono text-sm bg-muted px-2 py-1 rounded inline-block">
-                                                    {q.quotation_number}
-                                                </div>
-                                                <div className="text-xs text-muted-foreground mt-1">
-                                                    {q.created_at && isValid(new Date(q.created_at)) ? format(new Date(q.created_at), "dd/MM/yyyy", { locale: id }) : "-"}
-                                                </div>
-                                            </TableCell>
-                                            {userRole && userRole !== 'staff' && (
-                                                <TableCell className="align-middle border-r whitespace-nowrap">
-                                                    <div className="flex flex-col gap-1 items-center justify-center h-full mt-2">
-                                                        <span className="text-sm font-medium">{l.creator?.name || (l as any).created_by || "-"}</span>
                                                     </div>
-                                                </TableCell>
+                                                );
+                                            })()}
+                                        </TableCell>
+
+                                        <TableCell className="text-center align-middle">
+                                            {(userRole === 'pimpinan' && l.creator?.user_id !== userId && !trackedIds.has(l.id)) ? (
+                                                <div className="w-4 h-4 mx-auto" />
+                                            ) : (
+                                                <Checkbox
+                                                    disabled={trackedIds.has(l.id) || (userRole !== 'super_admin' && l.created_by !== userId)}
+                                                    checked={selectedTrackingId === l.id || trackedIds.has(l.id)}
+                                                    onCheckedChange={(checked) => {
+                                                        const isApproved = l.status === 'approved'; // Check logic
+                                                        if (!isApproved) {
+                                                            toast.error("Belum bisa lanjut, tunggu di approve");
+                                                            return;
+                                                        }
+                                                        if (checked) {
+                                                            setSelectedTrackingId(l.id);
+                                                            setSelectedTrackingLetter(l.po_in);
+                                                        } else {
+                                                            setSelectedTrackingId(null);
+                                                            setSelectedTrackingLetter(null);
+                                                        }
+                                                    }}
+                                                />
                                             )}
-                                            <TableCell className="align-middle whitespace-nowrap">
-                                                <div className="flex flex-col gap-1 min-w-[200px]">
-                                                    <span className="font-medium">{po.subject || "-"}</span>
-                                                    <span className="text-xs text-muted-foreground">
-                                                        No Surat: <span className="text-foreground/80">{po.vendor_letter_number || "-"}</span>
-                                                    </span>
-                                                    <span className="text-xs text-muted-foreground">
-                                                        Tanggal: <span className="text-foreground/80">{po.vendor_letter_date ? format(new Date(po.vendor_letter_date), "dd/MM/yyyy") : "-"}</span>
-                                                    </span>
-                                                    {po.attachments?.length > 0 && (
-                                                        <div className="flex flex-wrap gap-1 pt-1">
-                                                            {po.attachments.map((att: any, i: number) => (
-                                                                <a key={i} href={getStorageUrl(att.file_path, 'purchase-order-attachments')} target="_blank" className="text-blue-600 flex items-center text-xs hover:underline">
-                                                                    <LinkIcon className="h-3 w-3 mr-1" /> File
+                                        </TableCell>
+
+                                        <TableCell className="align-middle bg-white/50 relative whitespace-nowrap">
+                                            <div className="flex flex-col gap-1 relative z-10">
+                                                <span className="font-medium bg-green-100 text-green-800 px-2 py-1 rounded text-xs inline-block mb-2 w-fit">
+                                                    {req.request_code || "-"}
+                                                </span>
+                                                <span className="font-bold text-base">{cust?.company_name || "-"}</span>
+                                                <span className="font-medium">{req.title || "-"}</span>
+                                                <div className="text-sm text-muted-foreground flex flex-col gap-1 mt-1">
+                                                    <div>
+                                                        <span className="font-semibold">No Surat:</span> {req.letter_number || "-"}
+                                                    </div>
+                                                    <div>
+                                                        <span className="font-semibold">PIC:</span> {req.customer_pic?.name || "-"}
+                                                    </div>
+                                                    <div>
+                                                        <span className="font-semibold">Tanggal:</span> {req.created_at ? format(new Date(req.created_at), "dd/MM/yyyy") : "-"}
+                                                    </div>
+                                                    {req.customer_attachments?.length > 0 && (
+                                                        <div className="flex flex-wrap gap-2 mt-1">
+                                                            {req.customer_attachments.map((att: any, i: number) => (
+                                                                <a key={i} href={getStorageUrl(att.file_path, "request-attachments")} target="_blank" className="text-blue-600 flex items-center text-xs hover:underline">
+                                                                    <LinkIcon className="h-3 w-3 mr-1" /> {att.file_name || "File"}
                                                                 </a>
                                                             ))}
                                                         </div>
                                                     )}
                                                 </div>
-                                            </TableCell>
+                                            </div>
+                                        </TableCell>
 
+                                        <TableCell className="align-middle whitespace-nowrap text-center">
+                                            <div className="text-sm font-mono bg-amber-50 text-amber-900 border border-amber-200 px-1 rounded w-fit mx-auto">
+                                                {getBalanceCode(po)}
+                                            </div>
+                                            <div className="text-xs text-muted-foreground mt-1">
+                                                {po.quotation?.balance_link?.[0]?.balance?.created_at && isValid(new Date(po.quotation.balance_link[0].balance.created_at))
+                                                    ? format(new Date(po.quotation.balance_link[0].balance.created_at), "dd/MM/yyyy", { locale: id })
+                                                    : "-"}
+                                            </div>
+                                        </TableCell>
 
+                                        <TableCell className="align-middle whitespace-nowrap text-center">
+                                            <div className="font-mono text-sm bg-muted px-2 py-1 rounded inline-block">
+                                                {q.quotation_number}
+                                            </div>
+                                            <div className="text-xs text-muted-foreground mt-1">
+                                                {q.created_at && isValid(new Date(q.created_at)) ? format(new Date(q.created_at), "dd/MM/yyyy", { locale: id }) : "-"}
+                                            </div>
+                                        </TableCell>
 
-                                            <TableCell className="relative overflow-hidden whitespace-nowrap text-right">
-                                                {/* Corner Badge */}
-                                                {po.is_completed && (
-                                                    <div className="absolute top-0 right-0 w-[75px] h-[75px] overflow-hidden pointer-events-none z-20">
-                                                        <div className="absolute top-[10px] right-[-30px] w-[100px] text-center rotate-45 bg-green-600 text-white text-[9px] font-bold py-1 shadow-sm">
-                                                            SELESAI
-                                                        </div>
-                                                    </div>
-                                                )}
-                                                <div className="flex justify-end gap-2 relative z-10">
-                                                    {/* Approval Toggle for Pimpinan / Super Admin */}
-                                                    {(userRole === 'pimpinan' || userRole === 'super_admin') && (
-                                                        <div className="flex items-center gap-2 bg-gray-50 p-1 rounded border mr-2">
-                                                            <div className="flex flex-col items-end">
-                                                                <span className={`text-[10px] font-bold ${l.status === 'approved' ? 'text-emerald-600' : 'text-amber-600'}`}>
-                                                                    {l.status === 'approved' ? 'Approved' : 'Pending'}
-                                                                </span>
-                                                            </div>
-                                                            <Switch
-                                                                checked={l.status === 'approved'}
-                                                                onCheckedChange={() => handleStatusToggle(l.id, l.status || 'pending')}
-                                                                className="scale-75"
-                                                            />
-                                                        </div>
-                                                    )}
-
-                                                    <Button variant="outline" size="sm" className="h-8 w-8 p-0" onClick={() => handleViewDetail(q.id, l.po_in?.subject, l.po_in?.invoice_type)}>
-                                                        <Eye className="h-4 w-4" />
-                                                    </Button>
-                                                    {!trackedIds.has(l.id) && canManage && ((l as any).created_by === userId || userRole === 'super_admin') && (
-                                                        <DeleteConfirmationDialog
-                                                            onDelete={() => handleDelete(l.id)}
-                                                            trigger={
-                                                                <Button variant="outline" size="sm" className="text-destructive hover:bg-destructive/10 border-destructive/20">
-                                                                    <Trash2 className="h-4 w-4" />
-                                                                </Button>
-                                                            }
-                                                        />
-                                                    )}
+                                        {userRole && userRole !== 'staff' && (
+                                            <TableCell className="align-middle whitespace-nowrap text-center">
+                                                <div className="flex flex-col gap-1 items-center justify-center h-full">
+                                                    <span className="text-sm font-medium">{l.creator?.name || (l as any).created_by || "-"}</span>
                                                 </div>
                                             </TableCell>
-                                        </TableRow>
-                                    );
-                                });
+                                        )}
+
+                                        <TableCell className="align-middle whitespace-nowrap">
+                                            <div className="flex flex-col space-y-1">
+                                                <span className="font-medium">{po.subject || "-"}</span>
+                                                <span className="text-xs text-muted-foreground">
+                                                    Ref: <span className="text-foreground/80">{po.vendor_letter_number || "-"}</span>
+                                                </span>
+                                                {attachments.length > 0 && (
+                                                    <div className="flex flex-wrap gap-1 pt-1">
+                                                        {attachments.map((att: any, ai: number) => (
+                                                            <a key={ai} href={getStorageUrl(att.file_path, 'purchase-order-attachments')} target="_blank" className="text-blue-600 hover:underline flex items-center text-xs">
+                                                                <LinkIcon className="h-3 w-3 mr-1" /> File
+                                                            </a>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                                {/* Optional: Show Letter Count if meaningful */}
+
+                                            </div>
+                                        </TableCell>
+
+                                        <TableCell className="relative overflow-hidden whitespace-nowrap text-center align-middle">
+                                            <div className="flex flex-col gap-2 items-center relative z-10">
+                                                <Button variant="outline" className="gap-2" onClick={() => handleViewDetail(q.id, po.subject, po.invoice_type, l.status || 'pending')}>
+                                                    <Eye className="h-4 w-4" />
+                                                    View
+                                                </Button>
+
+                                                {(userRole === 'staff' || userRole === 'super_admin' || (userRole === 'pimpinan' && l.created_by === userId)) && !trackedIds.has(l.id) && selectedTrackingId !== l.id && (
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                                                        onClick={() => handleDeleteClick(group.map(g => g.id))}
+                                                        title="Hapus Surat Jalan"
+                                                    >
+                                                        <Trash2 className="h-4 w-4" />
+                                                    </Button>
+                                                )}
+
+                                                {(userRole === 'pimpinan' || userRole === 'super_admin') && (
+                                                    <div className="flex items-center gap-2 bg-gray-50 p-1 rounded border">
+                                                        <span className={`text-[10px] font-bold ${group.every(g => g.status === 'approved') ? 'text-emerald-600' : 'text-amber-600'}`}>
+                                                            {group.every(g => g.status === 'approved') ? 'Aprv' : 'Pend'}
+                                                        </span>
+                                                        <Switch
+                                                            checked={group.every(g => g.status === 'approved')}
+                                                            onCheckedChange={() => handleBulkStatusToggle(group)}
+                                                            className="scale-75"
+                                                        />
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </TableCell>
+                                    </TableRow>
+                                );
                             })
                         )}
                     </TableBody>
                 </Table>
             </div>
 
+
             {/* Pagination Controls */}
 
-            {groupedLetters.length > 0 && (
-                <div className="flex items-center justify-between">
-                    <div className="text-sm text-muted-foreground">
-                        Menampilkan {(currentPage - 1) * itemsPerPage + 1} sampai {Math.min(currentPage * itemsPerPage, groupedLetters.length)} dari {groupedLetters.length} entri
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <Button
-                            variant="outline"
-                            size="icon"
-                            onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                            disabled={currentPage === 1}
-                        >
-                            <ChevronLeft className="h-4 w-4" />
-                        </Button>
-                        <div className="text-sm font-medium">
-                            Hal {currentPage} dari {totalPages}
+            {
+                groupedLetters.length > 0 && (
+                    <div className="flex items-center justify-between">
+                        <div className="text-sm text-muted-foreground">
+                            Menampilkan {(currentPage - 1) * itemsPerPage + 1} sampai {Math.min(currentPage * itemsPerPage, groupedLetters.length)} dari {groupedLetters.length} entri
                         </div>
-                        <Button
-                            variant="outline"
-                            size="icon"
-                            onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-                            disabled={currentPage === totalPages}
-                        >
-                            <ChevronRight className="h-4 w-4" />
-                        </Button>
+                        <div className="flex items-center gap-2">
+                            <Button
+                                variant="outline"
+                                size="icon"
+                                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                                disabled={currentPage === 1}
+                            >
+                                <ChevronLeft className="h-4 w-4" />
+                            </Button>
+                            <div className="text-sm font-medium">
+                                Hal {currentPage} dari {totalPages}
+                            </div>
+                            <Button
+                                variant="outline"
+                                size="icon"
+                                onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                                disabled={currentPage === totalPages}
+                            >
+                                <ChevronRight className="h-4 w-4" />
+                            </Button>
+                        </div>
                     </div>
-                </div>
-            )
+                )
             }
             {/* Detail Modal */}
             <Dialog open={isDetailOpen} onOpenChange={setIsDetailOpen}>
@@ -1064,6 +1139,34 @@ const InternalLetters = () => {
                                         const mainLabel = hasDP ? "Tagihan DP" : "Tagihan Full";
                                         const mainType = hasDP ? 'DP' : 'FULL';
 
+                                        // Find specific Internal Letter for this PO/Invoice Type
+                                        // We look into the quotations -> po_ins to find a match
+                                        // Assuming 1 Quotation per PO usually in this context?
+                                        const linkedQuotation = po.quotations?.[0]; // Take first linked quotation
+                                        const linkedPoIns = linkedQuotation?.po_ins || [];
+
+                                        // Match PO In based on Type?
+                                        // Note: mainType is 'DP' or 'FULL'. PO In has 'invoice_type'.
+                                        // 'invoice_type' relies on localized or fixed strings? (Usually 'DP', 'PELUNASAN', 'TAGIHAN FULL'?)
+                                        // Logic:
+                                        // If mainType is 'DP', find PO In with invoice_type like 'DP'
+                                        // If mainType is 'FULL', find PO In with invoice_type like 'TAGIHAN FULL'?
+                                        // Let's try to match loosely or default to the *first* internal letter if simple 1-to-1?
+
+                                        // Better heuristic: match by similarity or if only 1 exists.
+                                        // Let's try to finding one that has an internal letter.
+                                        const specificPoIn = linkedPoIns.find((pi: any) => {
+                                            if (mainType === 'DP') return (pi.invoice_type || '').includes('DP');
+                                            if (mainType === 'FULL') return (pi.invoice_type || '').includes('FULL') || (pi.invoice_type || '').includes('Tagihan');
+                                            return true;
+                                        }) || linkedPoIns[0];
+
+                                        const specificLetter = specificPoIn?.internal_letters?.[0] || specificPoIn?.internal_letters; // it is singular or array? Query was internal_letters(id...) implies relation. usually 1-1.
+
+                                        // If we found a specific letter, use its status. Otherwise fallback to global 'currentLetterStatus'
+                                        const rowStatus = specificLetter?.status || currentLetterStatus;
+                                        const rowLetterId = specificLetter?.id;
+
                                         return (
                                             <Fragment key={po.id}>
                                                 <TableRow>
@@ -1073,6 +1176,9 @@ const InternalLetters = () => {
                                                             {internalNo}
                                                         </span>
                                                         <div className="text-[10px] text-blue-600 font-bold mt-1 uppercase tracking-wider">{mainLabel}</div>
+                                                        <div className={`text-[10px] font-bold mt-1 uppercase tracking-wider px-1.5 py-0.5 rounded w-fit ${rowStatus === 'approved' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                                                            {rowStatus === 'approved' ? 'APPROVED' : 'PENDING'}
+                                                        </div>
                                                     </TableCell>
                                                     <TableCell>
                                                         <span className="font-mono text-black">
@@ -1124,10 +1230,17 @@ const InternalLetters = () => {
                                                     </TableCell>
                                                     <TableCell className="text-right">
                                                         <div className="flex flex-col gap-2 items-end">
-                                                            <Button size="sm" variant="outline" className="w-full justify-center" onClick={() => handlePrint(po, internalNo, mainType)}>
+                                                            <Button
+                                                                size="sm"
+                                                                variant="outline"
+                                                                className="w-full justify-center"
+                                                                onClick={() => handlePrint(po, internalNo, mainType)}
+                                                            >
                                                                 <Printer className="h-4 w-4 mr-2" />
                                                                 Cetak
                                                             </Button>
+
+
                                                             {userRole === 'pimpinan' && (
                                                                 <div className="relative w-full">
                                                                     <Input
@@ -1170,7 +1283,11 @@ const InternalLetters = () => {
                                                             </div>
                                                         </TableCell>
                                                         <TableCell className="text-right">
-                                                            <Button size="sm" variant="outline" onClick={() => handlePrint(po, internalNo, 'PELUNASAN')}>
+                                                            <Button
+                                                                size="sm"
+                                                                variant="outline"
+                                                                onClick={() => handlePrint(po, internalNo, 'PELUNASAN')}
+                                                            >
                                                                 <Printer className="h-4 w-4 mr-2" />
                                                                 Cetak
                                                             </Button>
@@ -1219,13 +1336,23 @@ const InternalLetters = () => {
 
                                 // 2. Refresh the Detail List in background
                                 if (currentQuotationId) {
-                                    handleViewDetail(currentQuotationId, currentInvoiceSubject, currentInvoiceType);
+                                    handleViewDetail(currentQuotationId, currentInvoiceSubject, currentInvoiceType, currentLetterStatus);
                                 }
                             }}
                         />
                     )}
                 </DialogContent>
             </Dialog>
+
+
+            <DeleteConfirmationDialog
+                open={isDeleteDialogOpen}
+                onOpenChange={setIsDeleteDialogOpen}
+                onDelete={handleConfirmDelete}
+                trigger={<span className="hidden" />}
+                title="Hapus Surat Jalan"
+                description="Apakah anda yakin ingin menghapus surat jalan ini? Data yang dihapus tidak dapat dikembalikan."
+            />
         </div >
     );
 };

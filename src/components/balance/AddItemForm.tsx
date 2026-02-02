@@ -14,6 +14,8 @@ interface AddItemFormProps {
   shippingCustomerGroups: Array<{ id: string; group_name: string; cost: number }>;
   customerMargin: number;
   customerPaymentPercentage: number;
+  overallCosts: Array<{ id: string; cost_category: string; amount: number }>;
+  currentTotalQty: number;
   onSuccess: () => void;
 }
 
@@ -24,6 +26,8 @@ export default function AddItemForm({
   shippingCustomerGroups,
   customerMargin,
   customerPaymentPercentage,
+  overallCosts,
+  currentTotalQty,
   onSuccess,
 }: AddItemFormProps) {
   const [step, setStep] = useState(1);
@@ -70,12 +74,10 @@ export default function AddItemForm({
   // Fetch categories from database
   const [deliveryTimeCategories, setDeliveryTimeCategories] = useState<Array<{ id: string; time_category: string; percentage: number }>>([]);
   const [difficultyCategories, setDifficultyCategories] = useState<Array<{ id: string; difficulty_level: string; percentage: number }>>([]);
-  const [overallCosts, setOverallCosts] = useState<Array<{ id: string; cost_category: string; amount: number }>>([]);
 
   useEffect(() => {
     fetchDeliveryTimeCategories();
     fetchDifficultyCategories();
-    fetchOverallCosts();
   }, []);
 
   const fetchDeliveryTimeCategories = async () => {
@@ -106,18 +108,7 @@ export default function AddItemForm({
     setDifficultyCategories(data || []);
   };
 
-  const fetchOverallCosts = async () => {
-    const { data, error } = await supabase
-      .from("default_overall_cost_settings")
-      .select("*");
 
-    if (error) {
-      console.error(error);
-      return;
-    }
-
-    setOverallCosts(data || []);
-  };
 
   const searchVendors = async (term: string) => {
     if (!term) {
@@ -286,8 +277,14 @@ export default function AddItemForm({
     // Payment_cost = pay_pct × B
     const Payment_cost = pay_pct * B;
 
-    // Cost_per_pc = B + Vendor_per_pc + Mpa_per_pc + Difficulty + Shipping + Payment_cost
-    const Cost_per_pc = B + Vendor_per_pc + Mpa_per_pc + Difficulty + Shipping + Payment_cost;
+    // Calculate Overall Cost Distribution
+    // Estimate: distribute total overall cost across (existing items + this new item)
+    const totalOverallCost = overallCosts.reduce((sum, cost) => sum + cost.amount, 0);
+    const estimatedTotalQty = currentTotalQty + Q;
+    const overallCostPerUnit = estimatedTotalQty > 0 ? totalOverallCost / estimatedTotalQty : 0;
+
+    // Cost_per_pc = B + Vendor_per_pc + Mpa_per_pc + Difficulty + Shipping + Payment_cost + overallCostPerUnit
+    const Cost_per_pc = B + Vendor_per_pc + Mpa_per_pc + Difficulty + Shipping + Payment_cost + overallCostPerUnit;
 
     // margin = margin penjualan
     const margin_pct = customerMargin / 100;

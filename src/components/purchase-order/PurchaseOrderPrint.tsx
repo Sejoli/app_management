@@ -220,16 +220,55 @@ export default function PurchaseOrderPrint({ po, onUpdate, internalNumberOverrid
         const fetchLiveSettings = async () => {
             if (!po.quotations || po.quotations.length === 0) return;
 
-            // Find first valid balance ID
+            // Find first valid balance ID and Entry ID
             let balanceId = null;
+            let entryId: number | null = null;
             const q = po.quotations[0];
-            if (Array.isArray(q.balance_link) && q.balance_link.length > 0) {
-                balanceId = q.balance_link[0].balance_id || q.balance_link[0].balance?.id;
+
+            // Normalize balance link
+            let links: any[] = [];
+            if (Array.isArray(q.balance_link)) {
+                links = q.balance_link;
             } else if (q.balance_link) {
-                balanceId = q.balance_link.balance_id || q.balance_link.balance?.id;
+                links = [q.balance_link];
             }
 
-            if (balanceId && po.vendor_id) {
+            if (links.length > 0) {
+                const firstLink = links[0];
+                balanceId = firstLink.balance_id || firstLink.balance?.id;
+                // entry_id might be directly on link or nested
+                entryId = firstLink.entry_id || firstLink.balance_entry_id || null;
+            }
+
+            if (balanceId && entryId) {
+                // 1. Fetch PPN from balance_settings (Overview)
+                const { data: balanceSettings } = await supabase
+                    .from("balance_settings")
+                    .select("ppn_percentage")
+                    .eq("balance_id", balanceId)
+                    .eq("balance_entry_id", entryId)
+                    .maybeSingle();
+
+                if (balanceSettings) {
+                    setPpn(balanceSettings.ppn_percentage ?? 11);
+                }
+
+                // 2. Fetch Discount from balance_vendor_settings (Vendor Specific)
+                if (po.vendor_id) {
+                    const { data: vendorSettings } = await supabase
+                        .from("balance_vendor_settings")
+                        .select("*")
+                        .eq("balance_id", balanceId)
+                        .eq("balance_entry_id", entryId)
+                        .eq("vendor_id", po.vendor_id)
+                        .maybeSingle();
+
+                    if (vendorSettings) {
+                        if (vendorSettings.discount !== undefined) setDiscount(vendorSettings.discount);
+                    }
+                }
+            } else if (balanceId && po.vendor_id) {
+                // Fallback if no entryId found (Legacy/Fallback)
                 const { data: settings } = await supabase
                     .from("balance_vendor_settings")
                     .select("*")
@@ -238,7 +277,6 @@ export default function PurchaseOrderPrint({ po, onUpdate, internalNumberOverrid
                     .maybeSingle();
 
                 if (settings) {
-                    // Apply live settings
                     if (settings.discount !== undefined) setDiscount(settings.discount);
                 }
             }
@@ -422,7 +460,7 @@ export default function PurchaseOrderPrint({ po, onUpdate, internalNumberOverrid
                                             ${internalNumberOverride ? `
                                                 <span class="info-label">Customer</span><span class="info-colon">:</span><span class="info-value">${customer?.company_name || "-"}</span>
                                                 <span class="info-label">Alamat</span><span class="info-colon">:</span><span class="info-value">${customer?.address || "-"}</span>
-                                                <span class="info-label">PIC</span><span class="info-colon">:</span><span class="info-value">${po.quotations?.[0]?.request?.customer_pic?.name || "-"}</span>
+                                                <span class="info-label">PIC</span><span class="info-colon">:</span><span class="info-value">${po.vendor_pic?.name || "-"}</span>
                                             ` : `
                                                 <span class="info-label">Vendor</span><span class="info-colon">:</span><span class="info-value">${po.vendor.company_name}</span>
                                                 <span class="info-label">Alamat</span><span class="info-colon">:</span><span class="info-value">${po.vendor.office_address || po.vendor.address || "-"}</span>
@@ -812,7 +850,7 @@ export default function PurchaseOrderPrint({ po, onUpdate, internalNumberOverrid
 
                                                         <span className="font-semibold text-gray-700">PIC</span>
                                                         <span className="text-center">:</span>
-                                                        <span className="text-gray-900">{po.quotations?.[0]?.request?.customer_pic?.name || "-"}</span>
+                                                        <span className="text-gray-900">{po.vendor_pic?.name || "-"}</span>
                                                     </div>
                                                 ) : (
                                                     /* Standard PO: Show VENDOR Info */
@@ -922,28 +960,14 @@ export default function PurchaseOrderPrint({ po, onUpdate, internalNumberOverrid
 
                                                 <div className="flex justify-between text-gray-900 items-center">
                                                     <div className="flex items-center justify-end pr-4 text-right">
-                                                        <span>Disc (</span>
-                                                        <input
-                                                            type="number"
-                                                            value={discount}
-                                                            onChange={e => setDiscount(Math.max(0, Number(e.target.value)))}
-                                                            className="w-8 text-center bg-transparent border-none p-0 h-auto focus:ring-0 appearance-none no-arrows"
-                                                        />
-                                                        <span>%):</span>
+                                                        <span>Disc ({discount}%):</span>
                                                     </div>
                                                     <span className="text-right text-red-600">- {discountAmount.toLocaleString("id-ID")}</span>
                                                 </div>
 
                                                 <div className="flex justify-between text-gray-900 items-center">
                                                     <div className="flex items-center justify-end pr-4 text-right">
-                                                        <span>PPN (</span>
-                                                        <input
-                                                            type="number"
-                                                            value={ppn}
-                                                            onChange={e => setPpn(Math.max(0, Number(e.target.value)))}
-                                                            className="w-8 text-center bg-transparent border-none p-0 h-auto focus:ring-0 appearance-none"
-                                                        />
-                                                        <span>%):</span>
+                                                        <span>PPN ({ppn}%):</span>
                                                     </div>
                                                     <span className="text-right">{ppnAmount.toLocaleString("id-ID")}</span>
                                                 </div>

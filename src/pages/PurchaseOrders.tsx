@@ -108,6 +108,43 @@ interface Quotation {
 
 // --- Components ---
 
+function VendorPicSelect({ vendorId, currentPicId, poId, onUpdate, disabled }: { vendorId: string, currentPicId?: string, poId: string, onUpdate: (newPic: any) => void, disabled?: boolean }) {
+    const [pics, setPics] = useState<any[]>([]);
+
+    useEffect(() => {
+        if (vendorId) {
+            supabase.from("vendor_pics").select("*").eq("vendor_id", vendorId)
+                .then(({ data }) => setPics(data || []));
+        }
+    }, [vendorId]);
+
+    const handleChange = async (picId: string) => {
+        const selectedPic = pics.find(p => p.id === picId);
+        if (!selectedPic) return;
+
+        const { error } = await supabase.from("purchase_orders").update({ vendor_pic_id: picId }).eq("id", poId);
+        if (error) {
+            toast.error("Gagal update PIC");
+        } else {
+            toast.success("PIC berhasil diupdate");
+            onUpdate(selectedPic);
+        }
+    }
+
+    return (
+        <Select value={currentPicId || ""} onValueChange={handleChange} disabled={disabled}>
+            <SelectTrigger className="h-6 text-xs mt-1 w-full min-w-[120px]">
+                <SelectValue placeholder="Pilih PIC" />
+            </SelectTrigger>
+            <SelectContent>
+                {pics.map(p => (
+                    <SelectItem key={p.id} value={p.id}>{p.name} {p.position ? `(${p.position})` : ''}</SelectItem>
+                ))}
+            </SelectContent>
+        </Select>
+    )
+}
+
 function GeneratorModal({
     open,
     onOpenChange,
@@ -675,6 +712,11 @@ export default function PurchaseOrders() {
                     title,
                     created_at,
                     customer_attachments: request_attachments(file_name, file_path)
+                ),
+                po_links: purchase_order_quotations(
+                    purchase_order: purchase_orders(
+                        status
+                    )
                 )
             )
             creator:team_members(name)
@@ -2458,10 +2500,17 @@ purchase_orders(
                                                                 checked={selectedPOInIds.includes(po.id) || (po.internal_letter && po.internal_letter.length > 0)}
                                                                 disabled={!canManage || (po.internal_letter && po.internal_letter.length > 0) || (userRole === 'pimpinan' && po.created_by !== userId)}
                                                                 onCheckedChange={() => {
-                                                                    if (po.status !== 'approved') {
-                                                                        toast.error("Belum bisa diproses, tunggu di approve");
+                                                                    // Check Linked PO Out Status
+                                                                    // Logic: If ANY linked PO Out is NOT approved, we block.
+                                                                    // This ensures we don't process Incoming POs (Invoices) before Outgoing POs are finalized.
+                                                                    const poOutLinks = po.quotations?.po_links || [];
+                                                                    const hasPendingPOOut = poOutLinks.some((link: any) => link.purchase_order?.status !== 'approved');
+
+                                                                    if (poOutLinks.length > 0 && hasPendingPOOut) {
+                                                                        toast.error("PO Out belum di-approve, tidak bisa diproses");
                                                                         return;
                                                                     }
+
                                                                     toggleSelectPOIn(po.id);
                                                                 }}
                                                             />
@@ -2658,7 +2707,23 @@ purchase_orders(
                                                 <TableCell className="whitespace-nowrap">
                                                     <div className="flex flex-col space-y-1">
                                                         <span className="font-semibold">{po.vendor?.company_name}</span>
-                                                        <span className="text-xs text-muted-foreground">PIC: {po.vendor_pic?.name || "-"}</span>
+                                                        <div className="flex items-center gap-1">
+                                                            <span className="text-xs text-muted-foreground whitespace-nowrap">PIC:</span>
+                                                            <VendorPicSelect
+                                                                vendorId={po.vendor_id}
+                                                                currentPicId={po.vendor_pic_id}
+                                                                poId={po.id}
+                                                                disabled={userRole === 'pimpinan' && po.created_by !== userId}
+                                                                onUpdate={(newPic: any) => {
+                                                                    setSelectedGroup((prev: any) => {
+                                                                        if (!prev) return prev;
+                                                                        const updatedPos = [...prev.pos];
+                                                                        updatedPos[idx] = { ...updatedPos[idx], vendor_pic: newPic, vendor_pic_id: newPic.id };
+                                                                        return { ...prev, pos: updatedPos };
+                                                                    });
+                                                                }}
+                                                            />
+                                                        </div>
 
                                                         <div className="text-xs bg-muted/50 p-1 rounded mt-1 border">
                                                             <div><span className="font-semibold">Ref:</span> {po.vendor_letter_number || "-"}</div>
@@ -2694,13 +2759,14 @@ purchase_orders(
                                                 </TableCell>
                                                 <TableCell className="text-right whitespace-nowrap">
                                                     <div className="flex justify-end gap-2 items-center">
-                                                        <Button size="sm" variant="outline" onClick={() => {
-                                                            if (po.status !== 'approved') {
-                                                                toast.error("Belum bisa dicetak, tunggu di approve");
-                                                                return;
-                                                            }
-                                                            handlePrint(po, hasDP ? 'DP' : '');
-                                                        }}>
+                                                        <Button
+                                                            size="sm"
+                                                            variant="outline"
+                                                            disabled={(po.status || '').toLowerCase().trim() !== 'approved'}
+                                                            onClick={() => {
+                                                                handlePrint(po, hasDP ? 'DP' : '');
+                                                            }}
+                                                        >
                                                             <Printer className="h-4 w-4 mr-2" />
                                                             Cetak
                                                         </Button>
@@ -2710,11 +2776,8 @@ purchase_orders(
                                                                 variant={isExpanded ? "secondary" : "ghost"}
                                                                 className="h-8 w-8 p-0 rounded-full border border-dashed hover:bg-blue-50"
                                                                 title="Tambah Tagihan Pelunasan"
+                                                                disabled={(po.status || '').toLowerCase().trim() !== 'approved'}
                                                                 onClick={() => {
-                                                                    if (po.status !== 'approved') {
-                                                                        toast.error("Belum bisa tambah pelunasan, tunggu di approve");
-                                                                        return;
-                                                                    }
                                                                     toggleVendorExpand(po.id);
                                                                 }}
                                                             >
@@ -2772,26 +2835,28 @@ purchase_orders(
                                             </TableRow>
 
                                             {/* Settlement Row */}
-                                            {hasDP && isExpanded && (
-                                                <TableRow className="bg-blue-50/50 hover:bg-blue-50">
-                                                    <TableCell></TableCell>
-                                                    <TableCell className="font-mono text-xs text-right align-middle text-muted-foreground">
-                                                        ↳
-                                                    </TableCell>
-                                                    <TableCell>
-                                                        <div className="flex items-center gap-2 pl-4">
-                                                            <span className="font-bold text-sm text-blue-700">Tagihan Pelunasan</span>
-                                                            <span className="text-[10px] px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full uppercase tracking-wider font-bold">Settlement</span>
-                                                        </div>
-                                                    </TableCell>
-                                                    <TableCell className="text-right">
-                                                        <Button size="sm" variant="outline" onClick={() => handlePrint(po, 'PELUNASAN')}>
-                                                            <Printer className="h-4 w-4 mr-2" />
-                                                            Cetak
-                                                        </Button>
-                                                    </TableCell>
-                                                </TableRow>
-                                            )}
+                                            {
+                                                hasDP && isExpanded && (
+                                                    <TableRow className="bg-blue-50/50">
+                                                        <TableCell></TableCell>
+                                                        <TableCell className="font-mono text-xs text-right align-middle text-muted-foreground">
+                                                            ↳
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            <div className="flex items-center gap-2 pl-4">
+                                                                <span className="font-bold text-sm text-blue-700">Tagihan Pelunasan</span>
+                                                                <span className="text-[10px] px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full uppercase tracking-wider font-bold">Settlement</span>
+                                                            </div>
+                                                        </TableCell>
+                                                        <TableCell className="text-right">
+                                                            <Button size="sm" variant="outline" onClick={() => handlePrint(po, 'PELUNASAN')}>
+                                                                <Printer className="h-4 w-4 mr-2" />
+                                                                Cetak
+                                                            </Button>
+                                                        </TableCell>
+                                                    </TableRow>
+                                                )
+                                            }
                                         </Fragment>
                                     );
                                 })}

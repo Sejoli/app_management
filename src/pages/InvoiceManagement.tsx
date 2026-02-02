@@ -116,7 +116,7 @@ export default function InvoiceManagement() {
             request_code,
             request_date,
             created_at,
-            customer:customers(company_name, delivery_address, customer_code),
+            customer:customers(id, company_name, delivery_address, customer_code),
             customer_pic:customer_pics(name),
             customer_attachments:request_attachments(file_name, file_path)
           ),

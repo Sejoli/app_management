@@ -3,6 +3,8 @@ import { Button } from "@/components/ui/button";
 import { Printer } from "lucide-react";
 import { useRef, useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
 import { formatTerbilang } from "@/utils/terbilang";
 
 interface InvoicePrintModalProps {
@@ -16,14 +18,32 @@ export default function InvoicePrintModal({ open, onOpenChange, invoice, company
     const printRef = useRef<HTMLDivElement>(null);
     const [items, setItems] = useState<any[]>([]);
     const [settings, setSettings] = useState<any>(null);
+    const [selectedAttention, setSelectedAttention] = useState("General Manager");
+    const [pics, setPics] = useState<any[]>([]);
     const [director, setDirector] = useState<{ name: string; position: string } | null>(null);
 
     useEffect(() => {
         if (open && invoice?.quotation?.id) {
             fetchInvoiceItems();
             fetchDirector();
+
+            // Default to General Manager when opening, or potentially reset
+            setSelectedAttention("General Manager");
+
+            if (invoice?.quotation?.request?.customer?.id) {
+                fetchPics(invoice.quotation.request.customer.id);
+            }
         }
     }, [open, invoice]);
+
+    const fetchPics = async (customerId: string) => {
+        const { data } = await supabase
+            .from("customer_pics")
+            .select("name, position")
+            .eq("customer_id", customerId);
+
+        if (data) setPics(data);
+    };
 
     const fetchDirector = async () => {
         const { data: members } = await supabase
@@ -104,7 +124,7 @@ export default function InvoicePrintModal({ open, onOpenChange, invoice, company
     // Invoice specific WA message if needed, or generic
     const whatsappMessage = `Hallo dari ${invoice?.quotation?.request?.customer?.company_name || ""} terkait Invoice ${invoice?.invoice_number}`;
     const isApproved = invoice?.status === 'approved';
-    const qrCodeUrl = (isApproved && formattedCompanyPhone) ? `https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(`https://wa.me/${formattedCompanyPhone}?text=${encodeURIComponent(whatsappMessage)}`)}` : "";
+    const qrCodeUrl = formattedCompanyPhone ? `https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(`https://wa.me/${formattedCompanyPhone}?text=${encodeURIComponent(whatsappMessage)}`)}` : "";
 
     const handlePrint = () => {
         const logoUrl = company?.logo_path ? getStorageUrl(company.logo_path) : "";
@@ -134,7 +154,8 @@ export default function InvoicePrintModal({ open, onOpenChange, invoice, company
         const discountPercentage = settings?.discount_percentage || 0;
         const discountAmount = totalAmount * (discountPercentage / 100);
         const afterDiscount = totalAmount - discountAmount;
-        const ppnPercentage = settings?.ppn_percentage || 0;
+        // PPN Default to 11 if undefined/null
+        const ppnPercentage = settings?.ppn_percentage ?? 11;
         const ppnAmount = Math.round(afterDiscount * (ppnPercentage / 100));
         const grandTotal = Math.round(afterDiscount + ppnAmount);
 
@@ -281,7 +302,7 @@ export default function InvoicePrintModal({ open, onOpenChange, invoice, company
                                             <div class="info-grid">
                                                 <span class="info-label">Customer</span><span class="info-colon">:</span><span class="info-value">${invoice.quotation?.request?.customer?.company_name || "-"}</span>
                                                 <span class="info-label">Alamat</span><span class="info-colon">:</span><span class="info-value">${invoice.quotation?.request?.customer?.delivery_address || invoice.quotation?.request?.customer?.address || "-"}</span>
-                                                <span class="info-label">Attention</span><span class="info-colon">:</span><span class="info-value">${invoice.quotation?.request?.customer_pic?.name || "-"}</span>
+                                                <span class="info-label">Attention</span><span class="info-colon">:</span><span class="info-value">${selectedAttention}</span>
                                             </div>
                                         </div>
                                         <div class="meta-side">
@@ -368,8 +389,8 @@ export default function InvoicePrintModal({ open, onOpenChange, invoice, company
                                         </div>
                                     </div>
 
-                                    <div style="margin-top: 24px; font-size: 11pt; color: #6b7280; font-style: italic; padding-top: 8px; line-height: 1.2;">
-                                        Dokumen ini dikeluarkan oleh Sistem Integrasi Data PT. Morgan Powerindo Amerta dan dinyatakan Sah dan Otentik bila disertai QR Code dan tidak memerlukan tanda tangan basah. Silahkan melakukan verifikasi dengan scan QR Code
+                                    <div style="margin-top: 24px; font-size: 9pt; color: #6b7280; font-style: italic; padding-top: 8px; line-height: 1.2;">
+                                        Dokumen ini dikeluarkan oleh Sistem Integrasi Data ${company?.name || "Nama Perusahaan"} dan dinyatakan Sah dan Otentik bila disertai QR Code dan tidak memerlukan tanda tangan basah. Silahkan melakukan verifikasi dengan scan QR Code
                                     </div>
 
                                     <div class="footer">
@@ -411,7 +432,7 @@ export default function InvoicePrintModal({ open, onOpenChange, invoice, company
                                 <div class="info-grid">
                                     <span class="info-label">Customer</span><span class="info-colon">:</span><span class="info-value">${invoice.quotation?.request?.customer?.company_name || "-"}</span>
                                     <span class="info-label">Alamat</span><span class="info-colon">:</span><span class="info-value">${invoice.quotation?.request?.customer?.delivery_address || invoice.quotation?.request?.customer?.address || "-"}</span>
-                                    <span class="info-label">Attention</span><span class="info-colon">:</span><span class="info-value">${invoice.quotation?.request?.customer_pic?.name || "-"}</span>
+                                    <span class="info-label">Attention</span><span class="info-colon">:</span><span class="info-value">${selectedAttention}</span>
                                 </div>
                             </div>
                             <div class="meta-side">
@@ -609,7 +630,7 @@ export default function InvoicePrintModal({ open, onOpenChange, invoice, company
                 </DialogHeader>
 
                 <div className="space-y-4">
-                    <div className="flex justify-end">
+                    <div className="flex justify-end mb-4">
                         <Button onClick={handlePrint}>
                             <Printer className="h-4 w-4 mr-2" />
                             Cetak
@@ -626,7 +647,7 @@ export default function InvoicePrintModal({ open, onOpenChange, invoice, company
                                         <img
                                             src={getStorageUrl(company.logo_path)}
                                             alt="Logo"
-                                            className="h-16 w-auto object-contain"
+                                            className="h-24 w-auto object-contain"
                                         />
                                     )}
                                     <div>
@@ -651,10 +672,22 @@ export default function InvoicePrintModal({ open, onOpenChange, invoice, company
                                         <span className="text-gray-700 text-center">:</span>
                                         <span className="text-gray-900">{invoice.quotation?.request?.customer?.delivery_address || invoice.quotation?.request?.customer?.address || "-"}</span>
                                     </div>
-                                    <div className="grid grid-cols-[100px_10px_1fr] items-baseline">
+                                    <div className="grid grid-cols-[100px_10px_1fr] items-center">
                                         <span className="font-semibold text-gray-700">Attention</span>
                                         <span className="text-gray-700 text-center">:</span>
-                                        <span className="text-gray-900">{invoice.quotation?.request?.customer_pic?.name || "-"}</span>
+                                        <Select value={selectedAttention} onValueChange={setSelectedAttention}>
+                                            <SelectTrigger className="w-fit h-auto p-0 border-0 shadow-none text-gray-900 font-normal focus:ring-0">
+                                                <SelectValue className="p-0" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="General Manager">General Manager</SelectItem>
+                                                {pics.map((pic, idx) => (
+                                                    <SelectItem key={idx} value={pic.name || `PIC ${idx + 1}`}>
+                                                        {pic.name}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
                                     </div>
                                 </div>
                                 <div className="space-y-1 w-full max-w-[400px] ml-auto text-right">
@@ -762,8 +795,8 @@ export default function InvoicePrintModal({ open, onOpenChange, invoice, company
                                 </div>
                             </div>
 
-                            <div className="mt-6 text-[11pt] text-gray-500 italic pt-2 leading-tight">
-                                Dokumen ini dikeluarkan oleh Sistem Integrasi Data PT. Morgan Powerindo Amerta dan dinyatakan Sah dan Otentik bila disertai QR Code dan tidak memerlukan tanda tangan basah. Silahkan melakukan verifikasi dengan scan QR Code
+                            <div className="mt-6 text-[9pt] text-gray-500 italic pt-2 leading-tight">
+                                Dokumen ini dikeluarkan oleh Sistem Integrasi Data {company?.name || "Nama Perusahaan"} dan dinyatakan Sah dan Otentik bila disertai QR Code dan tidak memerlukan tanda tangan basah. Silahkan melakukan verifikasi dengan scan QR Code
                             </div>
 
                             {/* Footer / Signature */}
@@ -826,7 +859,7 @@ export default function InvoicePrintModal({ open, onOpenChange, invoice, company
                                     <div className="grid grid-cols-[100px_10px_1fr] items-baseline">
                                         <span className="font-semibold text-gray-700">Attention</span>
                                         <span className="text-gray-700 text-center">:</span>
-                                        <span className="text-gray-900">{invoice.quotation?.request?.customer_pic?.name || "-"}</span>
+                                        <span className="text-gray-900">{selectedAttention}</span>
                                     </div>
                                 </div>
                                 <div className="space-y-1 w-full max-w-[400px] ml-auto text-right">
@@ -922,7 +955,7 @@ export default function InvoicePrintModal({ open, onOpenChange, invoice, company
                                                 <div>
                                                     <h2 className="text-[11pt] font-bold text-green-600 m-0 mb-0.5">{company?.name || "Nama Perusahaan"}</h2>
                                                     <p className="text-[11px] text-gray-500 m-0">{company?.address || "-"}</p>
-                                                    <p className="text-[11px] text-gray-500 m-0">{formattedCompanyPhone || "-"}</p>
+                                                    <p className="text-[11px] text-gray-500 m-0">{company?.phone || "-"}</p>
                                                 </div>
                                             </div>
                                             <div className="text-right">

@@ -17,6 +17,8 @@ interface DeleteConfirmationDialogProps {
     title?: string;
     description?: string;
     trigger?: React.ReactNode;
+    open?: boolean;
+    onOpenChange?: (open: boolean) => void;
 }
 
 export function DeleteConfirmationDialog({
@@ -24,9 +26,11 @@ export function DeleteConfirmationDialog({
     title = "Apakah anda yakin?",
     description = "Tindakan ini tidak dapat dibatalkan. Data akan dihapus secara permanen.",
     trigger,
+    open,
+    onOpenChange,
 }: DeleteConfirmationDialogProps) {
     return (
-        <AlertDialog>
+        <AlertDialog open={open} onOpenChange={onOpenChange}>
             <AlertDialogTrigger asChild>
                 {trigger || (
                     <Button variant="destructive" size="icon">
