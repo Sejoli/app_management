@@ -26,6 +26,7 @@ const InvoiceManagement = lazy(() => import("./pages/InvoiceManagement"));
 const ManualBook = lazy(() => import("./pages/ManualBook"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const Login = lazy(() => import("./pages/Login"));
+const Reports = lazy(() => import("./pages/Reports"));
 
 const queryClient = new QueryClient();
 
@@ -223,6 +224,16 @@ const App = () => {
                   <AuthGuard>
                     <Layout>
                       <ManualBook />
+                    </Layout>
+                  </AuthGuard>
+                }
+              />
+              <Route
+                path="/reports"
+                element={
+                  <AuthGuard>
+                    <Layout>
+                      <Reports />
                     </Layout>
                   </AuthGuard>
                 }

@@ -125,7 +125,7 @@ export default function CustomerPics() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["customer_pics"] });
       toast({ title: "Customer PIC deleted successfully" });
-      setDeletePic(null);
+
     },
     onError: (error: any) => {
       toast({
